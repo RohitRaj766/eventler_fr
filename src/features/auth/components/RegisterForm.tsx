@@ -9,15 +9,21 @@ import { registerUser, clearAuthError } from '@/features/auth/authSlice';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { Sparkles, Building, UserCheck } from 'lucide-react';
 
 export function RegisterForm() {
   const dispatch = useAppDispatch();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { isLoading, error } = useAppSelector((state) => state.auth);
   const [registerMode, setRegisterMode] = useState<'JOIN_ORG' | 'CREATE_ORG'>('JOIN_ORG');
+
+  const codeParam = searchParams.get('code') || searchParams.get('orgCode') || searchParams.get('organizationCode') || '';
+  const emailParam = searchParams.get('email') || '';
+  const programIdParam = searchParams.get('programId') || '';
+  const roleIdParam = searchParams.get('roleId') || '';
 
   const {
     register,
@@ -28,7 +34,10 @@ export function RegisterForm() {
     resolver: zodResolver(registerSchema),
     defaultValues: {
       mode: 'JOIN_ORG',
-      organizationCode: 'AJU-2026',
+      organizationCode: codeParam,
+      email: emailParam,
+      programId: programIdParam,
+      roleId: roleIdParam,
     },
   });
 
@@ -88,6 +97,8 @@ export function RegisterForm() {
 
       <form onSubmit={handleSubmit(onSubmit)}>
         <input type="hidden" {...register('mode')} value={registerMode} />
+        <input type="hidden" {...register('programId')} />
+        <input type="hidden" {...register('roleId')} />
 
         <CardContent className="space-y-3 pt-0">
           {error && (

@@ -4,7 +4,11 @@ import { useEffect, useState } from 'react';
 import { useAppDispatch, useAppSelector } from '@/app/hooks';
 import { fetchOrgMembers, updateUserRole } from '@/features/org/orgSlice';
 import { fetchRoles } from '@/features/role/roleSlice';
-import { Users, Search, ShieldCheck, Calendar, Copy, Check, Crown } from 'lucide-react';
+import { organizationService, programService } from '@/services/api';
+import { Users, Search, ShieldCheck, Calendar, Copy, Check, Crown, UserPlus, QrCode, Share2, Trash2, MailCheck } from 'lucide-react';
+import { InviteMemberModal } from '@/features/org/components/InviteMemberModal';
+import { QrCodeInviteModal } from '@/features/org/components/QrCodeInviteModal';
+import { Button } from '@/components/ui/button';
 
 export default function MembersPage() {
   const dispatch = useAppDispatch();
@@ -16,10 +20,35 @@ export default function MembersPage() {
   const [copied, setCopied] = useState(false);
   const [updatingUserId, setUpdatingUserId] = useState<string | null>(null);
 
+  // Onboarding Modal & Data States
+  const [inviteModalOpen, setInviteModalOpen] = useState(false);
+  const [qrModalOpen, setQrModalOpen] = useState(false);
+
+  const [programs, setPrograms] = useState<any[]>([]);
+  const [invitations, setInvitations] = useState<any[]>([]);
+
+  const loadInvitations = async () => {
+    try {
+      const list = await organizationService.getInvitations();
+      if (Array.isArray(list)) setInvitations(list);
+    } catch (err) {}
+  };
+
   useEffect(() => {
     dispatch(fetchOrgMembers());
     dispatch(fetchRoles());
+    programService.getOrgPrograms().then((progs) => setPrograms(progs || []));
+    loadInvitations();
   }, [dispatch]);
+
+  const handleRevokeInvitation = async (invitationId: string) => {
+    try {
+      await organizationService.revokeInvitation(invitationId);
+      loadInvitations();
+    } catch (err) {
+      console.error('Failed to revoke invitation:', err);
+    }
+  };
 
   const orgCode = activeOrg?.code || 'N/A';
 
@@ -36,6 +65,19 @@ export default function MembersPage() {
     currentUserRoleName === 'Organization Admin' ||
     currentUserRoleName === 'ORG_SUPER_ADMIN' ||
     currentUserRoleName === 'ORG_ADMIN';
+
+  const canInviteMembers =
+    user?.permissions?.includes('org.invite') ||
+    user?.permissions?.includes('org.manage_admins') ||
+    user?.permissions?.includes('role.manage') ||
+    [
+      'Organization Super Admin',
+      'ORG_SUPER_ADMIN',
+      'Organization Admin',
+      'ORG_ADMIN',
+      'Chief Coordinator',
+      'CHIEF_COORDINATOR',
+    ].includes(currentUserRoleName);
 
   const isCurrentUserSuperAdmin =
     currentUserRoleName === 'Organization Super Admin' || currentUserRoleName === 'ORG_SUPER_ADMIN';
@@ -75,19 +117,40 @@ export default function MembersPage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-3 bg-slate-950 border border-slate-800 p-3 rounded-xl">
-          <div className="space-y-0.5">
-            <span className="text-[10px] uppercase font-bold text-slate-500 block">Institution Invite Code</span>
-            <span className="text-xs font-mono font-bold text-indigo-400">{orgCode}</span>
+        {canInviteMembers && (
+          <div className="flex flex-wrap items-center gap-3">
+            <Button
+              onClick={() => setInviteModalOpen(true)}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs h-9 px-3 rounded-xl flex items-center gap-1.5 shadow-lg shadow-indigo-500/20"
+            >
+              <UserPlus className="h-4 w-4" />
+              <span>+ Invite Member</span>
+            </Button>
+
+            <Button
+              variant="outline"
+              onClick={() => setQrModalOpen(true)}
+              className="border-slate-700 bg-slate-950 hover:bg-slate-800 text-indigo-300 font-semibold text-xs h-9 px-3 rounded-xl flex items-center gap-1.5"
+            >
+              <QrCode className="h-4 w-4 text-indigo-400" />
+              <span>Share Link & QR</span>
+            </Button>
+
+            <div className="flex items-center gap-3 bg-slate-950 border border-slate-800 p-2.5 rounded-xl">
+              <div className="space-y-0.5">
+                <span className="text-[9px] uppercase font-bold text-slate-500 block">Invite Code</span>
+                <span className="text-xs font-mono font-bold text-indigo-400">{orgCode}</span>
+              </div>
+              <button
+                onClick={handleCopyCode}
+                className="h-7 px-2.5 rounded-lg bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 font-semibold text-[11px] transition-colors flex items-center gap-1 border border-indigo-500/30"
+              >
+                {copied ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
+                <span>{copied ? 'Copied' : 'Copy'}</span>
+              </button>
+            </div>
           </div>
-          <button
-            onClick={handleCopyCode}
-            className="h-8 px-3 rounded-lg bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 font-semibold text-xs transition-colors flex items-center gap-1.5 border border-indigo-500/30"
-          >
-            {copied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
-            <span>{copied ? 'Copied!' : 'Copy Code'}</span>
-          </button>
-        </div>
+        )}
       </div>
 
       {/* Search & Statistics Bar */}
@@ -221,6 +284,96 @@ export default function MembersPage() {
           })}
         </div>
       )}
+
+      {/* Sent Invitations Tracker Table (Visible for Admins) */}
+      {canInviteMembers && invitations.length > 0 && (
+        <div className="space-y-3 bg-slate-900 border border-slate-800 p-5 rounded-2xl">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-bold text-white flex items-center gap-2">
+              <MailCheck className="h-4 w-4 text-indigo-400" />
+              Sent Onboarding Invitations Log ({invitations.length})
+            </h3>
+          </div>
+          <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-950">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-slate-900/80 border-b border-slate-800 text-slate-400 font-bold">
+                <tr>
+                  <th className="py-3 px-4">Invitee Email</th>
+                  <th className="py-3 px-4">Assigned Role</th>
+                  <th className="py-3 px-4">Event Program</th>
+                  <th className="py-3 px-4">Invited By</th>
+                  <th className="py-3 px-4">Status</th>
+                  <th className="py-3 px-4 text-right">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/60">
+                {invitations.map((inv) => (
+                  <tr key={inv.id} className="hover:bg-slate-900/40 text-slate-300">
+                    <td className="py-2.5 px-4 font-semibold text-white">{inv.email}</td>
+                    <td className="py-2.5 px-4 font-mono text-indigo-400">{inv.role?.name || 'Member'}</td>
+                    <td className="py-2.5 px-4 text-slate-400">
+                      {inv.program?.name ? (
+                        <span className="px-2 py-0.5 rounded-md bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 font-medium">
+                          {inv.program.name}
+                        </span>
+                      ) : (
+                        <span className="text-slate-500 font-italic">All Institution Events</span>
+                      )}
+                    </td>
+                    <td className="py-2.5 px-4 text-slate-400">
+                      {inv.invitedBy ? `${inv.invitedBy.firstName} ${inv.invitedBy.lastName}` : 'Admin'}
+                    </td>
+                    <td className="py-2.5 px-4">
+                      <span
+                        className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase border ${
+                          inv.status === 'ACCEPTED'
+                            ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                            : inv.status === 'REVOKED'
+                            ? 'bg-rose-500/10 text-rose-400 border-rose-500/30'
+                            : 'bg-amber-500/10 text-amber-400 border-amber-500/30'
+                        }`}
+                      >
+                        {inv.status}
+                      </span>
+                    </td>
+                    <td className="py-2.5 px-4 text-right">
+                      {inv.status === 'PENDING' && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleRevokeInvitation(inv.id)}
+                          className="h-7 text-xs text-rose-400 hover:text-rose-300 hover:bg-rose-500/10"
+                        >
+                          <Trash2 className="h-3.5 w-3.5 mr-1" /> Revoke
+                        </Button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Onboarding Modals */}
+      <InviteMemberModal
+        isOpen={inviteModalOpen}
+        onClose={() => setInviteModalOpen(false)}
+        orgCode={orgCode}
+        roles={roles}
+        programs={programs}
+        onInviteSent={() => loadInvitations()}
+      />
+
+      <QrCodeInviteModal
+        isOpen={qrModalOpen}
+        onClose={() => setQrModalOpen(false)}
+        orgCode={orgCode}
+        orgName={activeOrg?.name}
+        programs={programs}
+        roles={roles}
+      />
     </div>
   );
 }

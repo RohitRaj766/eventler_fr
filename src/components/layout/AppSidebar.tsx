@@ -11,6 +11,8 @@ import {
   ShieldCheck,
   Users,
   History,
+  CreditCard,
+  FileText,
   ChevronsUpDown,
   MoreVertical,
   Sparkles,
@@ -110,7 +112,7 @@ export function AppSidebar({ onNavigate }: { onNavigate?: () => void }) {
           ],
         },
         {
-          title: 'Venues & Equipment',
+          title: 'Venues and Equipment',
           href: '/venues',
           icon: Building2,
           adminOnly: true,
@@ -125,7 +127,7 @@ export function AppSidebar({ onNavigate }: { onNavigate?: () => void }) {
       groupName: 'Governance',
       items: [
         {
-          title: 'Roles & Permissions',
+          title: 'Roles and Permissions',
           href: '/roles',
           icon: ShieldCheck,
           adminOnly: true,
@@ -139,7 +141,7 @@ export function AppSidebar({ onNavigate }: { onNavigate?: () => void }) {
           href: '/members',
           icon: Users,
           subItems: [
-            { title: 'Member Roster & Roles', href: '/members' },
+            { title: 'Member Roster and Roles', href: '/members' },
           ],
         },
         {
@@ -150,6 +152,41 @@ export function AppSidebar({ onNavigate }: { onNavigate?: () => void }) {
           requiredAction: 'audit.read',
           subItems: [
             { title: 'Audit Trail Stream', href: '/audit-logs' },
+          ],
+        },
+      ],
+    },
+    {
+      groupName: 'Finances',
+      items: [
+        {
+          title: 'Billing and Plan',
+          href: '/billing',
+          icon: CreditCard,
+          superAdminOnly: true,
+          requiredAction: 'org.billing',
+          subItems: [
+            { title: 'Subscription and Quotas', href: '/billing' },
+          ],
+        },
+        {
+          title: 'Invoices and Receipts',
+          href: '/billing/invoices',
+          icon: FileText,
+          superAdminOnly: true,
+          requiredAction: 'org.billing',
+          subItems: [
+            { title: 'Tax Statements and PDFs', href: '/billing/invoices' },
+          ],
+        },
+        {
+          title: 'Payment Methods',
+          href: '/billing/payment-methods',
+          icon: Building2,
+          superAdminOnly: true,
+          requiredAction: 'org.billing',
+          subItems: [
+            { title: 'Corporate Cards and Contacts', href: '/billing/payment-methods' },
           ],
         },
       ],

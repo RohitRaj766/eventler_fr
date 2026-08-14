@@ -26,4 +26,21 @@ export const organizationService = {
     const response = await axiosInstance.put(`/organizations/members/${userId}/role`, { roleId });
     return response.data.data;
   },
+
+  async createInvitation(data: { email: string; roleId: string; programId?: string }) {
+    const response = await axiosInstance.post('/organizations/invitations', data);
+    return response.data.data;
+  },
+
+  async getInvitations(programId?: string) {
+    const response = await axiosInstance.get('/organizations/invitations', {
+      params: { programId }
+    });
+    return response.data.data;
+  },
+
+  async revokeInvitation(invitationId: string) {
+    const response = await axiosInstance.delete(`/organizations/invitations/${invitationId}`);
+    return response.data.data;
+  },
 };

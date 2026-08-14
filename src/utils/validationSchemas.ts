@@ -15,6 +15,8 @@ export const registerSchema = z.object({
   mode: z.enum(['JOIN_ORG', 'CREATE_ORG']),
   organizationCode: z.string().min(3, 'Organization code is required (e.g. AJU-2026)'),
   organizationName: z.string().optional(),
+  programId: z.string().optional(),
+  roleId: z.string().optional(),
 }).refine((data) => data.password === data.confirmPassword, {
   message: "Passwords don't match",
   path: ['confirmPassword'],
