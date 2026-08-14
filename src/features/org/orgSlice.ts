@@ -6,6 +6,7 @@ import { CreateOrgInput } from '@/utils/validationSchemas';
 interface OrgState {
   myOrganizations: Organization[];
   currentOrgDetails: Organization | null;
+  members: any[];
   isLoading: boolean;
   error: string | null;
 }
@@ -13,6 +14,7 @@ interface OrgState {
 const initialState: OrgState = {
   myOrganizations: [],
   currentOrgDetails: null,
+  members: [],
   isLoading: false,
   error: null,
 };
@@ -31,6 +33,15 @@ export const fetchMyOrganizations = createAsyncThunk(
       return orgs;
     } catch (err: any) {
       return rejectWithValue(err.response?.data?.message || 'Failed to fetch organizations');
+    }
+  },
+  {
+    condition: (_, { getState }: any) => {
+      const { org } = getState();
+      if (org.myOrganizations && org.myOrganizations.length > 0) {
+        return false;
+      }
+      return true;
     }
   }
 );
@@ -61,6 +72,28 @@ export const fetchOrganizationDetails = createAsyncThunk(
   }
 );
 
+export const fetchOrgMembers = createAsyncThunk(
+  'org/fetchMembers',
+  async (_, { rejectWithValue }) => {
+    try {
+      return await organizationService.getMembers();
+    } catch (err: any) {
+      return rejectWithValue(err.response?.data?.message || 'Failed to fetch members');
+    }
+  }
+);
+
+export const updateUserRole = createAsyncThunk(
+  'org/updateRole',
+  async ({ userId, roleId }: { userId: string; roleId: string }, { rejectWithValue }) => {
+    try {
+      return await organizationService.updateMemberRole(userId, roleId);
+    } catch (err: any) {
+      return rejectWithValue(err.response?.data?.message || 'Failed to update member role');
+    }
+  }
+);
+
 const orgSlice = createSlice({
   name: 'org',
   initialState,
@@ -83,6 +116,16 @@ const orgSlice = createSlice({
       })
       .addCase(fetchOrganizationDetails.fulfilled, (state, action) => {
         state.currentOrgDetails = action.payload;
+      })
+      .addCase(fetchOrgMembers.fulfilled, (state, action) => {
+        state.members = action.payload || [];
+      })
+      .addCase(updateUserRole.fulfilled, (state, action) => {
+        const index = state.members.findIndex((m) => m.userId === action.payload.userId || m.user?.id === action.payload.userId);
+        if (index !== -1) {
+          state.members[index].role = action.payload.role;
+          state.members[index].roleId = action.payload.roleId;
+        }
       });
   },
 });

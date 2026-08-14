@@ -12,18 +12,23 @@ import { useRouter } from 'next/navigation';
 export function DashboardLayout({ children }: { children: ReactNode }) {
   const dispatch = useAppDispatch();
   const router = useRouter();
-  const { isAuthenticated, isLoading } = useAppSelector((state) => state.auth);
+  const { user, isAuthenticated, isLoading } = useAppSelector((state) => state.auth);
+  const { myOrganizations } = useAppSelector((state) => state.org);
 
   useEffect(() => {
-    dispatch(fetchCurrentUser())
-      .unwrap()
-      .then(() => {
-        dispatch(fetchMyOrganizations());
-      })
-      .catch(() => {
-        router.push('/login');
-      });
-  }, [dispatch, router]);
+    if (!isAuthenticated || !user) {
+      dispatch(fetchCurrentUser())
+        .unwrap()
+        .then(() => {
+          dispatch(fetchMyOrganizations());
+        })
+        .catch(() => {
+          router.push('/login');
+        });
+    } else if (myOrganizations.length === 0) {
+      dispatch(fetchMyOrganizations());
+    }
+  }, [dispatch, router, isAuthenticated, user, myOrganizations.length]);
 
   if (isLoading && !isAuthenticated) {
     return (

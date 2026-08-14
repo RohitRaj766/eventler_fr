@@ -1,4 +1,5 @@
-import { createSlice, PayloadAction } from '@reduxjs/toolkit';
+import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
+import { notificationService } from '@/services/api';
 
 export interface ToastAlert {
   id: string;
@@ -10,13 +11,30 @@ export interface ToastAlert {
 
 interface NotificationState {
   toasts: ToastAlert[];
+  serverNotifications: any[];
   unreadCount: number;
+  isLoading: boolean;
+  error: string | null;
 }
 
 const initialState: NotificationState = {
   toasts: [],
+  serverNotifications: [],
   unreadCount: 0,
+  isLoading: false,
+  error: null,
 };
+
+export const fetchMyNotifications = createAsyncThunk(
+  'notification/fetchMy',
+  async (_, { rejectWithValue }) => {
+    try {
+      return await notificationService.getMyNotifications();
+    } catch (err: any) {
+      return rejectWithValue(err.response?.data?.message || 'Failed to fetch notifications');
+    }
+  }
+);
 
 const notificationSlice = createSlice({
   name: 'notification',
@@ -41,6 +59,21 @@ const notificationSlice = createSlice({
     markAllAsRead(state) {
       state.unreadCount = 0;
     },
+  },
+  extraReducers: (builder) => {
+    builder
+      .addCase(fetchMyNotifications.pending, (state) => {
+        state.isLoading = true;
+      })
+      .addCase(fetchMyNotifications.fulfilled, (state, action) => {
+        state.isLoading = false;
+        state.serverNotifications = action.payload || [];
+        state.unreadCount = action.payload?.length || 0;
+      })
+      .addCase(fetchMyNotifications.rejected, (state, action) => {
+        state.isLoading = false;
+        state.error = action.payload as string;
+      });
   },
 });
 

@@ -1,8 +1,10 @@
 'use client';
 
+import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { createProgramSchema, CreateProgramInput } from '@/utils/validationSchemas';
+import { updateNodeSchema } from '@/utils/validationSchemas';
+import { Node } from '@/types';
 import {
   Dialog,
   DialogContent,
@@ -13,30 +15,53 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { FolderTree } from 'lucide-react';
+import { Textarea } from '@/components/ui/textarea';
+import { Pencil } from 'lucide-react';
 
-interface CreateProgramModalProps {
+interface EditNodeModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (data: CreateProgramInput) => Promise<void>;
+  node: Node | null;
+  onSubmit: (id: string, updates: any) => Promise<void>;
 }
 
-export function CreateProgramModal({ isOpen, onClose, onSubmit }: CreateProgramModalProps) {
+export function EditNodeModal({ isOpen, onClose, node, onSubmit }: EditNodeModalProps) {
   const {
     register,
     handleSubmit,
+    setValue,
     reset,
     formState: { errors, isSubmitting },
-  } = useForm<CreateProgramInput>({
-    resolver: zodResolver(createProgramSchema),
-    defaultValues: {
-      plannedStartTime: new Date().toISOString().slice(0, 16),
-      plannedEndTime: new Date(Date.now() + 86400000).toISOString().slice(0, 16),
-    },
+  } = useForm({
+    resolver: zodResolver(updateNodeSchema),
   });
 
-  const handleFormSubmit = async (data: CreateProgramInput) => {
-    await onSubmit(data);
+  useEffect(() => {
+    if (node) {
+      setValue('name', node.name);
+      setValue('description', node.description || '');
+      setValue('type', node.type);
+      setValue('customTypeName', node.customTypeName || '');
+      setValue('status', node.status);
+      setValue('version', node.version || 1);
+      if (node.plannedStartTime) {
+        setValue('plannedStartTime', new Date(node.plannedStartTime).toISOString().slice(0, 16));
+      }
+      if (node.plannedEndTime) {
+        setValue('plannedEndTime', new Date(node.plannedEndTime).toISOString().slice(0, 16));
+      }
+    }
+  }, [node, setValue]);
+
+  const handleFormSubmit = async (data: any) => {
+    if (!node) return;
+    const formattedData = {
+      ...data,
+      plannedStartTime: data.plannedStartTime ? new Date(data.plannedStartTime).toISOString() : undefined,
+      plannedEndTime: data.plannedEndTime ? new Date(data.plannedEndTime).toISOString() : undefined,
+      version: node.version || 1,
+    };
+    await onSubmit(node.id, formattedData);
     reset();
     onClose();
   };
@@ -47,32 +72,32 @@ export function CreateProgramModal({ isOpen, onClose, onSubmit }: CreateProgramM
         <DialogHeader className="space-y-1.5 pb-2 border-b border-slate-100">
           <DialogTitle className="flex items-center gap-2 text-slate-900 font-bold text-lg">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600">
-              <FolderTree className="h-4 w-4" />
+              <Pencil className="h-4 w-4" />
             </div>
-            Create New Event Program
+            Edit / Rename Activity
           </DialogTitle>
           <DialogDescription className="text-xs font-medium text-slate-500">
-            Create a new event (e.g. Technika 2026, Annual Convocation, Research Conference).
+            Update title, description, and schedule timing for <strong className="text-slate-900">{node?.name}</strong>.
           </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit(handleFormSubmit)} className="space-y-4 pt-2">
           <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-slate-700">Event Title</label>
+            <label className="text-xs font-semibold text-slate-700">Activity / Session Title</label>
             <Input
               {...register('name')}
-              placeholder="e.g. Technika 2026"
-              className="h-10 text-xs bg-white border-slate-200 text-slate-900 placeholder:text-slate-400 focus-visible:ring-indigo-500"
+              placeholder="e.g. Keynote Presentation"
+              className="h-10 text-xs bg-white border-slate-200 text-slate-900 focus-visible:ring-indigo-500"
             />
-            {errors.name && <p className="text-xs text-red-500 font-medium">{errors.name.message}</p>}
+            {errors.name && <p className="text-xs text-red-500 font-medium">{errors.name.message as string}</p>}
           </div>
 
           <div className="space-y-1.5">
             <label className="text-xs font-semibold text-slate-700">Description</label>
-            <Input
+            <Textarea
               {...register('description')}
-              placeholder="Main annual engineering symposium & cultural fest"
-              className="h-10 text-xs bg-white border-slate-200 text-slate-900 placeholder:text-slate-400 focus-visible:ring-indigo-500"
+              placeholder="Brief description of this session..."
+              className="min-h-[70px] text-xs bg-white border-slate-200 text-slate-900 focus-visible:ring-indigo-500 resize-none"
             />
           </div>
 
@@ -84,9 +109,6 @@ export function CreateProgramModal({ isOpen, onClose, onSubmit }: CreateProgramM
                 type="datetime-local"
                 className="h-10 text-xs bg-white border-slate-200 text-slate-900 focus-visible:ring-indigo-500"
               />
-              {errors.plannedStartTime && (
-                <p className="text-xs text-red-500 font-medium">{errors.plannedStartTime.message}</p>
-              )}
             </div>
 
             <div className="space-y-1.5">
@@ -96,9 +118,6 @@ export function CreateProgramModal({ isOpen, onClose, onSubmit }: CreateProgramM
                 type="datetime-local"
                 className="h-10 text-xs bg-white border-slate-200 text-slate-900 focus-visible:ring-indigo-500"
               />
-              {errors.plannedEndTime && (
-                <p className="text-xs text-red-500 font-medium">{errors.plannedEndTime.message}</p>
-              )}
             </div>
           </div>
 
@@ -116,7 +135,7 @@ export function CreateProgramModal({ isOpen, onClose, onSubmit }: CreateProgramM
               disabled={isSubmitting}
               className="h-9 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-sm"
             >
-              {isSubmitting ? 'Creating Event...' : 'Create Event'}
+              {isSubmitting ? 'Saving...' : 'Save Changes'}
             </Button>
           </DialogFooter>
         </form>

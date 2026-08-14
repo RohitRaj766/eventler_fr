@@ -11,3 +11,5 @@ export * from './venue.service';
 export * from './role.service';
 export * from './audit.service';
 export * from './meta.service';
+export * from './notification.service';
+

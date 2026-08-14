@@ -43,6 +43,15 @@ export const fetchCurrentUser = createAsyncThunk(
     } catch (err: any) {
       return rejectWithValue(err.response?.data?.message || 'Failed to fetch user session');
     }
+  },
+  {
+    condition: (_, { getState }: any) => {
+      const { auth } = getState();
+      if (auth.user && auth.isAuthenticated) {
+        return false;
+      }
+      return true;
+    }
   }
 );
 
@@ -88,10 +97,17 @@ const authSlice = createSlice({
       })
       .addCase(loginUser.fulfilled, (state, action) => {
         state.isLoading = false;
-        state.user = action.payload.user;
+        state.user = {
+          ...action.payload.user,
+          organizations: action.payload.organizations,
+          permissions: action.payload.permissions,
+        };
         state.accessToken = action.payload.accessToken;
-        const orgId = action.payload.activeOrgId || action.payload.user?.organizationId || null;
+        const orgId = action.payload.activeOrganizationId || action.payload.activeOrgId || null;
         state.activeOrgId = orgId;
+        if (action.payload.organizations && orgId) {
+          state.activeOrg = action.payload.organizations.find((o: any) => o.id === orgId) || null;
+        }
         if (orgId) setApiActiveOrgId(orgId);
         state.isAuthenticated = true;
       })
@@ -115,10 +131,16 @@ const authSlice = createSlice({
       })
       .addCase(fetchCurrentUser.fulfilled, (state, action) => {
         state.isLoading = false;
-        state.user = action.payload.user;
-        state.activeOrg = action.payload.activeOrg || null;
-        const orgId = action.payload.activeOrg?.id || action.payload.user?.organizationId || state.activeOrgId;
+        state.user = {
+          ...action.payload.user,
+          organizations: action.payload.organizations,
+          permissions: action.payload.permissions,
+        };
+        const orgId = action.payload.activeOrganizationId || state.activeOrgId;
         state.activeOrgId = orgId;
+        if (action.payload.organizations && orgId) {
+          state.activeOrg = action.payload.organizations.find((o: any) => o.id === orgId) || null;
+        }
         if (orgId) setApiActiveOrgId(orgId);
         state.isAuthenticated = true;
       })

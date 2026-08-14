@@ -59,8 +59,17 @@ const programSlice = createSlice({
     setSelectedNode(state, action: PayloadAction<Node | null>) {
       state.selectedNode = action.payload;
     },
-    updateTreeRealtime(state, action: PayloadAction<Node>) {
-      state.activeProgramTree = action.payload;
+    updateTreeRealtime(state, action: PayloadAction<any>) {
+      const res = action.payload;
+      if (res && res.tree && Array.isArray(res.tree) && res.tree.length > 0) {
+        state.activeProgramTree = {
+          ...res.tree[0],
+          programId: res.id || res.programId,
+          programStatus: res.status || 'DRAFT',
+        };
+      } else {
+        state.activeProgramTree = res;
+      }
     },
   },
   extraReducers: (builder) => {
@@ -71,7 +80,16 @@ const programSlice = createSlice({
       })
       .addCase(fetchProgramTree.fulfilled, (state, action) => {
         state.isLoading = false;
-        state.activeProgramTree = action.payload;
+        const res = action.payload;
+        if (res && res.tree && Array.isArray(res.tree) && res.tree.length > 0) {
+          state.activeProgramTree = {
+            ...res.tree[0],
+            programId: res.id || res.programId,
+            programStatus: res.status || 'DRAFT',
+          };
+        } else {
+          state.activeProgramTree = res;
+        }
       })
       .addCase(fetchProgramTree.rejected, (state, action) => {
         state.isLoading = false;

@@ -16,4 +16,14 @@ export const organizationService = {
     const response = await axiosInstance.get(`/organizations/${id}`);
     return response.data.data;
   },
+
+  async getMembers() {
+    const response = await axiosInstance.get('/organizations/members');
+    return response.data.data;
+  },
+
+  async updateMemberRole(userId: string, roleId: string) {
+    const response = await axiosInstance.put(`/organizations/members/${userId}/role`, { roleId });
+    return response.data.data;
+  },
 };

@@ -132,13 +132,6 @@ export function Header() {
                 {org.id === activeOrgId && <span className="h-2 w-2 rounded-full bg-emerald-500" />}
               </DropdownMenuItem>
             ))}
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              onClick={() => setOrgModalOpen(true)}
-              className="text-xs font-semibold text-indigo-600 cursor-pointer"
-            >
-              <Plus className="mr-2 h-3.5 w-3.5" /> Create Organization
-            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
 

@@ -18,7 +18,7 @@ export default function RolesPage() {
     dispatch(fetchPermissions());
   }, [dispatch]);
 
-  const handleCreateRole = async (data: { name: string; description?: string; permissionIds: string[] }) => {
+  const handleCreateRole = async (data: { name: string; description?: string; category?: string; permissionIds: string[] }) => {
     await dispatch(createRole(data));
   };
 

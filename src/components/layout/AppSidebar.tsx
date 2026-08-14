@@ -1,8 +1,5 @@
 'use client';
 
-import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-import { cn } from '@/lib/utils';
 import { useAppSelector } from '@/app/hooks';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
@@ -12,24 +9,22 @@ import {
   CheckSquare,
   Building2,
   ShieldCheck,
+  Users,
   History,
   ChevronsUpDown,
   MoreVertical,
   Sparkles,
 } from 'lucide-react';
+import { SidebarNavGroup } from './sidebar/SidebarNavGroup';
+import { NavItemProps } from './sidebar/SidebarNavItem';
 
-interface NavGroup {
-  groupName?: string;
-  items: {
-    title: string;
-    href: string;
-    icon: React.ComponentType<{ className?: string }>;
-  }[];
+interface NavGroupDef {
+  groupName: string;
+  items: (NavItemProps & { requiredAction?: string; adminOnly?: boolean; superAdminOnly?: boolean })[];
 }
 
 export function AppSidebar({ onNavigate }: { onNavigate?: () => void }) {
-  const pathname = usePathname();
-  const { user } = useAppSelector((state) => state.auth);
+  const { user, activeOrg } = useAppSelector((state) => state.auth);
 
   const userName = user ? `${user.firstName} ${user.lastName}` : 'Alex Rivera';
   const userEmail = user?.email || 'user@gmail.com';
@@ -37,9 +32,44 @@ export function AppSidebar({ onNavigate }: { onNavigate?: () => void }) {
     ? `${user.firstName?.[0] || ''}${user.lastName?.[0] || ''}`.toUpperCase()
     : 'AR';
 
-  const navGroups: NavGroup[] = [
+  const userPermissions = user?.permissions || [];
+  const activeOrgObj = activeOrg || (user?.organizations && user.organizations[0]);
+
+  const currentUserRoleName =
+    activeOrgObj?.role ||
+    user?.organizations?.find((o: any) => o.id === activeOrgObj?.id)?.role ||
+    user?.role ||
+    '';
+
+  const isSuperAdmin =
+    currentUserRoleName === 'Organization Super Admin' ||
+    currentUserRoleName === 'ORG_SUPER_ADMIN' ||
+    userPermissions.includes('*');
+
+  const isAdmin =
+    isSuperAdmin ||
+    currentUserRoleName === 'Organization Admin' ||
+    currentUserRoleName === 'ORG_ADMIN' ||
+    userPermissions.includes('org.read') ||
+    userPermissions.includes('role.manage');
+
+  const canAccess = (item: NavItemProps & { requiredAction?: string; adminOnly?: boolean; superAdminOnly?: boolean }) => {
+    if (isSuperAdmin) return true;
+    if (item.superAdminOnly) return false;
+    if (item.adminOnly && !isAdmin) return false;
+    if (item.requiredAction) {
+      return (
+        isAdmin ||
+        userPermissions.includes(item.requiredAction) ||
+        userPermissions.includes('*')
+      );
+    }
+    return true;
+  };
+
+  const rawNavGroups: NavGroupDef[] = [
     {
-      groupName: 'Dashboards',
+      groupName: 'Analytics',
       items: [
         {
           title: 'Dashboard Overview',
@@ -52,38 +82,86 @@ export function AppSidebar({ onNavigate }: { onNavigate?: () => void }) {
       groupName: 'Event Operations',
       items: [
         {
-          title: 'Program Tree Builder',
+          title: 'Event Schedule Builder',
           href: '/programs/root',
           icon: FolderTree,
+          adminOnly: true,
+          requiredAction: 'program.create',
+          subItems: [
+            { title: 'Active Event Schedule', href: '/programs/root' },
+          ],
         },
         {
-          title: 'Live Engine Control',
+          title: 'Live Stage Tracker',
           href: '/live-engine',
           icon: Radio,
+          adminOnly: true,
+          requiredAction: 'timeline.update',
+          subItems: [
+            { title: 'Live Stage Control Room', href: '/live-engine' },
+          ],
         },
         {
-          title: 'Task Readiness Board',
+          title: 'Task Board',
           href: '/tasks',
           icon: CheckSquare,
+          subItems: [
+            { title: 'Readiness & Kanban', href: '/tasks' },
+          ],
         },
         {
           title: 'Venues & Equipment',
           href: '/venues',
           icon: Building2,
+          adminOnly: true,
+          requiredAction: 'venue.manage',
+          subItems: [
+            { title: 'Resource Inventory', href: '/venues' },
+          ],
         },
+      ],
+    },
+    {
+      groupName: 'Governance',
+      items: [
         {
-          title: 'RBAC Scope Matrix',
+          title: 'Roles & Permissions',
           href: '/roles',
           icon: ShieldCheck,
+          adminOnly: true,
+          requiredAction: 'role.manage',
+          subItems: [
+            { title: 'Role Category Pools', href: '/roles' },
+          ],
         },
         {
-          title: 'System Audit Stream',
+          title: 'University Members',
+          href: '/members',
+          icon: Users,
+          subItems: [
+            { title: 'Member Roster & Roles', href: '/members' },
+          ],
+        },
+        {
+          title: 'Activity Logs',
           href: '/audit-logs',
           icon: History,
+          superAdminOnly: true,
+          requiredAction: 'audit.read',
+          subItems: [
+            { title: 'Audit Trail Stream', href: '/audit-logs' },
+          ],
         },
       ],
     },
   ];
+
+  const navGroups = rawNavGroups
+    .map((group) => ({
+      ...group,
+      items: group.items.filter(canAccess),
+    }))
+    .filter((group) => group.items.length > 0);
 
   return (
     <aside className="flex flex-col h-full bg-white border-r border-slate-200/80 w-64 select-none">
@@ -100,39 +178,15 @@ export function AppSidebar({ onNavigate }: { onNavigate?: () => void }) {
         </button>
       </div>
 
-      {/* Navigation Sections */}
-      <div className="flex-1 overflow-y-auto p-3 space-y-6">
-        {navGroups.map((group, idx) => (
-          <div key={idx} className="space-y-1">
-            {group.groupName && (
-              <p className="px-3 text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2">
-                {group.groupName}
-              </p>
-            )}
-            {group.items.map((item) => {
-              const isActive = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(item.href));
-              const Icon = item.icon;
-
-              return (
-                <Link
-                  key={item.title}
-                  href={item.href}
-                  onClick={onNavigate}
-                  className={cn(
-                    'flex items-center justify-between rounded-lg px-3 py-2 text-xs font-medium transition-colors group',
-                    isActive
-                      ? 'bg-slate-100 text-slate-900 font-semibold'
-                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                  )}
-                >
-                  <div className="flex items-center gap-2.5">
-                    <Icon className={cn("h-4 w-4 transition-colors", isActive ? "text-indigo-600" : "text-slate-400 group-hover:text-slate-600")} />
-                    <span>{item.title}</span>
-                  </div>
-                </Link>
-              );
-            })}
-          </div>
+      {/* Modular Navigation Collapsible Sections */}
+      <div className="flex-1 overflow-y-auto p-3 space-y-4">
+        {navGroups.map((group) => (
+          <SidebarNavGroup
+            key={group.groupName}
+            groupName={group.groupName}
+            items={group.items}
+            onNavigate={onNavigate}
+          />
         ))}
       </div>
 

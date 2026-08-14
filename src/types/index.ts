@@ -39,6 +39,9 @@ export interface User {
   isActive: boolean;
   isEmailVerified: boolean;
   isPhoneVerified: boolean;
+  role?: string;
+  permissions?: string[];
+  organizations?: any[];
   createdAt: string;
 }
 
@@ -82,12 +85,21 @@ export interface RolePermission {
   permission?: Permission;
 }
 
+export type ProgramStatus =
+  | 'DRAFT'
+  | 'PLANNED'
+  | 'PUBLISHED'
+  | 'LIVE'
+  | 'PAUSED'
+  | 'COMPLETED'
+  | 'CANCELLED';
+
 export interface Program {
   id: string;
   organizationId: string;
   name: string;
   description?: string;
-  status: NodeStatus;
+  status: ProgramStatus;
   plannedStartTime: string;
   plannedEndTime: string;
   projectedStartTime: string;

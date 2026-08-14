@@ -71,7 +71,10 @@ export function getPriorityBadgeColor(priority: TaskPriority): string {
   }
 }
 
-export function getNodeTypeLabel(type: NodeTypeCategory, customName?: string | null): string {
+export function getNodeTypeLabel(type?: NodeTypeCategory | string | null, customName?: string | null): string {
+  if (!type) return customName || 'SESSION';
   if (type === 'CUSTOM' && customName) return customName;
-  return type.charAt(0) + type.slice(1).toLowerCase();
+  if (type === 'NODE' || type === 'PROGRAM') return customName || 'EVENT';
+  const str = String(type);
+  return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase().replace(/_/g, ' ');
 }

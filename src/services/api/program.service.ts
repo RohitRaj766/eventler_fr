@@ -8,6 +8,11 @@ export const programService = {
     return response.data.data;
   },
 
+  async getOrgPrograms() {
+    const response = await axiosInstance.get('/programs');
+    return response.data.data;
+  },
+
   async getProgramTree(id: string) {
     const response = await axiosInstance.get(`/programs/${id}`);
     return response.data.data;

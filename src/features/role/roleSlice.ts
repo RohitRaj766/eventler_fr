@@ -40,7 +40,7 @@ export const fetchPermissions = createAsyncThunk(
 
 export const createRole = createAsyncThunk(
   'role/createRole',
-  async (data: { name: string; description?: string; permissionIds: string[] }, { rejectWithValue }) => {
+  async (data: { name: string; description?: string; category?: string; permissionIds: string[] }, { rejectWithValue }) => {
     try {
       return await roleService.createRole(data);
     } catch (err: any) {

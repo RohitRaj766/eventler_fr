@@ -22,7 +22,10 @@ export const nodeService = {
   },
 
   async moveNode(id: string, newParentId?: string | null, newSortOrder?: number) {
-    const response = await axiosInstance.post(`/nodes/${id}/move`, { newParentId, newSortOrder });
+    const response = await axiosInstance.post(`/nodes/${id}/move`, {
+      newParentId: newParentId || null,
+      newSortOrder: typeof newSortOrder === 'number' ? newSortOrder : 0,
+    });
     return response.data.data;
   },
 

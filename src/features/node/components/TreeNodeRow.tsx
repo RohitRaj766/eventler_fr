@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { cn } from '@/lib/utils';
 import { Node } from '@/types';
 import { getStatusColorClass, formatTimeOnly, getNodeTypeLabel } from '@/utils/formatters';
 import { Button } from '@/components/ui/button';
@@ -15,15 +16,18 @@ import {
   Trash2,
   Calendar,
   Layers,
+  Pencil,
 } from 'lucide-react';
 
-interface TreeNodeRowProps {
+export interface TreeNodeRowProps {
   node: Node;
   depth?: number;
   onAddChild?: (node: Node) => void;
   onRecordTime?: (node: Node) => void;
   onAddDependency?: (node: Node) => void;
+  onEdit?: (node: Node) => void;
   onMove?: (node: Node) => void;
+  onDropMove?: (draggedId: string, targetId: string) => void;
   onDelete?: (node: Node) => void;
 }
 
@@ -33,18 +37,46 @@ export function TreeNodeRow({
   onAddChild,
   onRecordTime,
   onAddDependency,
+  onEdit,
   onMove,
+  onDropMove,
   onDelete,
 }: TreeNodeRowProps) {
   const [isExpanded, setIsExpanded] = useState(true);
-  const hasChildren = node.children && node.children.length > 0;
+  const [isDragOver, setIsDragOver] = useState(false);
+  const childrenList = node.children || (node as any).tree || [];
+  const hasChildren = childrenList.length > 0;
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setIsDragOver(true);
+  };
+
+  const handleDragLeave = () => {
+    setIsDragOver(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+    const draggedId = e.dataTransfer.getData('text/plain');
+    if (draggedId && draggedId !== node.id) {
+      onDropMove?.(draggedId, node.id);
+    }
+  };
 
   return (
     <div className="space-y-2">
       {/* Node Container Box */}
       <div
-        className="group relative flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border bg-card/60 p-3 shadow-xs hover:border-primary/50 transition-all duration-200 backdrop-blur-xs"
-        style={{ marginLeft: `${depth * 24}px` }}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        className={cn(
+          "group relative flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border bg-card/60 p-3 shadow-xs hover:border-primary/50 transition-all duration-200 backdrop-blur-xs",
+          isDragOver && "border-2 border-amber-500 bg-amber-500/10 shadow-lg ring-2 ring-amber-500/30"
+        )}
       >
         {/* Left Side: Type, Expand Toggle, Title & Times */}
         <div className="flex items-start sm:items-center gap-3">
@@ -79,6 +111,12 @@ export function TreeNodeRow({
               </Badge>
             </div>
 
+            {node.description && (
+              <p className="text-xs text-muted-foreground font-normal line-clamp-1">
+                {node.description}
+              </p>
+            )}
+
             {/* Timelines Info */}
             <div className="flex items-center gap-4 text-xs text-muted-foreground flex-wrap">
               <span className="flex items-center gap-1">
@@ -105,40 +143,55 @@ export function TreeNodeRow({
             size="sm"
             className="h-8 px-2 text-xs hover:bg-emerald-500/10 hover:text-emerald-400"
             onClick={() => onRecordTime?.(node)}
-            title="Log Real-world Execution Time"
+            title="Record Live Stage Execution Time"
           >
             <Clock className="mr-1 h-3.5 w-3.5" />
-            <span className="hidden lg:inline">Actual Time</span>
+            <span className="hidden lg:inline">Record Time</span>
           </Button>
 
           <Button
             variant="ghost"
             size="sm"
-            className="h-8 px-2 text-xs hover:bg-indigo-500/10 hover:text-indigo-400"
+            className="h-8 px-2.5 text-xs hover:bg-indigo-500/10 hover:text-indigo-400 font-semibold"
             onClick={() => onAddChild?.(node)}
-            title="Add Child Sub-node"
+            title="Add Sub-Activity to this session"
           >
             <Plus className="mr-1 h-3.5 w-3.5" />
-            <span className="hidden lg:inline">Child</span>
+            <span>+ Sub-Activity</span>
           </Button>
 
           <Button
             variant="ghost"
             size="sm"
-            className="h-8 px-2 text-xs hover:bg-cyan-500/10 hover:text-cyan-400"
+            className="h-8 px-2.5 text-xs hover:bg-cyan-500/10 hover:text-cyan-400 font-semibold"
             onClick={() => onAddDependency?.(node)}
-            title="Link Node Dependency"
+            title="Set Activity Dependency (Depends On)"
           >
             <LinkIcon className="mr-1 h-3.5 w-3.5" />
-            <span className="hidden lg:inline">Link</span>
+            <span>Depends On</span>
           </Button>
 
           <Button
             variant="ghost"
             size="icon"
-            className="h-8 w-8 hover:bg-amber-500/10 hover:text-amber-400"
+            className="h-8 w-8 hover:bg-blue-500/10 hover:text-blue-400"
+            onClick={() => onEdit?.(node)}
+            title="Edit / Rename Session or Activity"
+          >
+            <Pencil className="h-3.5 w-3.5" />
+          </Button>
+
+          <Button
+            variant="ghost"
+            size="icon"
+            draggable
+            onDragStart={(e) => {
+              e.dataTransfer.setData('text/plain', node.id);
+              e.dataTransfer.effectAllowed = 'move';
+            }}
+            className="h-8 w-8 hover:bg-amber-500/10 hover:text-amber-400 cursor-grab active:cursor-grabbing"
             onClick={() => onMove?.(node)}
-            title="Move Node Parent/Position"
+            title="Hold & Drag to Move Activity or Click to Reorder"
           >
             <Move className="h-3.5 w-3.5" />
           </Button>
@@ -157,8 +210,8 @@ export function TreeNodeRow({
 
       {/* Children Recursion */}
       {hasChildren && isExpanded && (
-        <div className="space-y-2">
-          {node.children!.map((child) => (
+        <div className="space-y-2 pl-4 border-l border-indigo-500/30 ml-4 py-1">
+          {childrenList.map((child: any) => (
             <TreeNodeRow
               key={child.id}
               node={child}
@@ -166,7 +219,9 @@ export function TreeNodeRow({
               onAddChild={onAddChild}
               onRecordTime={onRecordTime}
               onAddDependency={onAddDependency}
+              onEdit={onEdit}
               onMove={onMove}
+              onDropMove={onDropMove}
               onDelete={onDelete}
             />
           ))}

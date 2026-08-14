@@ -44,7 +44,12 @@ export function CreateNodeModal({ isOpen, onClose, parentNode, onSubmit }: Creat
   const selectedType = watch('type');
 
   const handleFormSubmit = async (data: CreateNodeInput) => {
-    await onSubmit(data);
+    const formattedData = {
+      ...data,
+      plannedStartTime: data.plannedStartTime ? new Date(data.plannedStartTime).toISOString() : new Date().toISOString(),
+      plannedEndTime: data.plannedEndTime ? new Date(data.plannedEndTime).toISOString() : new Date().toISOString(),
+    };
+    await onSubmit(formattedData);
     reset();
     onClose();
   };
@@ -57,16 +62,16 @@ export function CreateNodeModal({ isOpen, onClose, parentNode, onSubmit }: Creat
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600">
               <Plus className="h-4 w-4" />
             </div>
-            Add Sub-Node to {parentNode?.name || 'Program'}
+            Add Activity to {parentNode?.name || 'Event'}
           </DialogTitle>
           <DialogDescription className="text-xs font-medium text-slate-500">
-            Create an arbitrary depth child node in your hierarchy execution tree.
+            Add a new session, track, or sub-activity under {parentNode?.name || 'this event'}.
           </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit(handleFormSubmit)} className="space-y-4 pt-2">
           <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-slate-700">Node Name</label>
+            <label className="text-xs font-semibold text-slate-700">Activity / Session Name</label>
             <Input
               {...register('name')}
               placeholder="e.g. Keynote Session 1"
