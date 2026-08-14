@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useAppDispatch, useAppSelector } from '@/app/hooks';
 import { logoutUser, switchOrganization } from '@/features/auth/authSlice';
-import { DynamicBreadcrumb } from './DynamicBreadcrumb';
+import { createOrganization } from '@/features/org/orgSlice';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Input } from '@/components/ui/input';
@@ -17,14 +17,16 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { AppSidebar } from './AppSidebar';
+import { CreateOrgModal } from '@/features/org/components/CreateOrgModal';
+import { CreateOrgInput } from '@/utils/validationSchemas';
 import {
   Menu,
   Bell,
   Search,
   Moon,
-  Palette,
   PanelLeft,
   Building,
+  Plus,
   LogOut,
   User as UserIcon,
   Shield,
@@ -38,6 +40,7 @@ export function Header() {
   const { myOrganizations } = useAppSelector((state) => state.org);
   const { toasts } = useAppSelector((state) => state.notification);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [orgModalOpen, setOrgModalOpen] = useState(false);
 
   const handleLogout = async () => {
     await dispatch(logoutUser());
@@ -48,9 +51,13 @@ export function Header() {
     dispatch(switchOrganization(orgId));
   };
 
+  const handleCreateOrg = async (data: CreateOrgInput) => {
+    await dispatch(createOrganization(data));
+  };
+
   const initials = user
     ? `${user.firstName?.[0] || ''}${user.lastName?.[0] || ''}`.toUpperCase()
-    : 'TB';
+    : 'AR';
 
   return (
     <header className="sticky top-0 z-40 flex h-16 w-full items-center justify-between border-b border-slate-200/80 bg-white/90 px-4 backdrop-blur sm:px-6">
@@ -105,12 +112,12 @@ export function Header() {
         {/* Tenant Switcher Dropdown */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="sm" className="hidden xl:flex items-center gap-2 max-w-[160px] h-8 text-xs border-slate-200">
+            <Button variant="outline" size="sm" className="hidden sm:flex items-center gap-2 max-w-[180px] h-8 text-xs border-slate-200">
               <Building className="h-3.5 w-3.5 text-slate-400 shrink-0" />
               <span className="truncate">{activeOrg?.name || 'Institutional Org'}</span>
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-56">
+          <DropdownMenuContent align="end" className="w-60">
             <DropdownMenuLabel className="text-xs font-medium text-slate-400">
               Active Organization Context
             </DropdownMenuLabel>
@@ -125,6 +132,13 @@ export function Header() {
                 {org.id === activeOrgId && <span className="h-2 w-2 rounded-full bg-emerald-500" />}
               </DropdownMenuItem>
             ))}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onClick={() => setOrgModalOpen(true)}
+              className="text-xs font-semibold text-indigo-600 cursor-pointer"
+            >
+              <Plus className="mr-2 h-3.5 w-3.5" /> Create Organization
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
 
@@ -142,8 +156,8 @@ export function Header() {
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-56">
             <div className="flex flex-col space-y-1 p-2">
-              <p className="text-sm font-semibold leading-none">{user?.firstName || 'Toby'} {user?.lastName || 'Belhome'}</p>
-              <p className="text-xs text-slate-400 truncate">{user?.email || 'hello@tobybelhome.com'}</p>
+              <p className="text-sm font-semibold leading-none">{user?.firstName || 'Alex'} {user?.lastName || 'Rivera'}</p>
+              <p className="text-xs text-slate-400 truncate">{user?.email || 'user@gmail.com'}</p>
             </div>
             <DropdownMenuSeparator />
             <DropdownMenuItem className="text-xs cursor-pointer">
@@ -159,6 +173,12 @@ export function Header() {
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+
+      <CreateOrgModal
+        isOpen={orgModalOpen}
+        onClose={() => setOrgModalOpen(false)}
+        onSubmit={handleCreateOrg}
+      />
     </header>
   );
 }

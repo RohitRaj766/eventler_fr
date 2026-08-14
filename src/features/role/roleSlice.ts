@@ -1,5 +1,5 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
-import { api } from '@/services/api';
+import { roleService } from '@/services/api';
 import { Role, Permission } from '@/types';
 
 interface RoleState {
@@ -20,8 +20,7 @@ export const fetchRoles = createAsyncThunk(
   'role/fetchRoles',
   async (_, { rejectWithValue }) => {
     try {
-      const response = await api.get('/roles');
-      return response.data.data;
+      return await roleService.getRoles();
     } catch (err: any) {
       return rejectWithValue(err.response?.data?.message || 'Failed to fetch roles');
     }
@@ -32,8 +31,7 @@ export const fetchPermissions = createAsyncThunk(
   'role/fetchPermissions',
   async (_, { rejectWithValue }) => {
     try {
-      const response = await api.get('/roles/permissions');
-      return response.data.data;
+      return await roleService.getPermissions();
     } catch (err: any) {
       return rejectWithValue(err.response?.data?.message || 'Failed to fetch permissions');
     }
@@ -44,8 +42,7 @@ export const createRole = createAsyncThunk(
   'role/createRole',
   async (data: { name: string; description?: string; permissionIds: string[] }, { rejectWithValue }) => {
     try {
-      const response = await api.post('/roles', data);
-      return response.data.data;
+      return await roleService.createRole(data);
     } catch (err: any) {
       return rejectWithValue(err.response?.data?.message || 'Failed to create role');
     }

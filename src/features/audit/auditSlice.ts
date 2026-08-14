@@ -1,5 +1,5 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
-import { api } from '@/services/api';
+import { auditService } from '@/services/api';
 import { AuditLog } from '@/types';
 
 interface AuditState {
@@ -18,8 +18,7 @@ export const fetchAuditLogs = createAsyncThunk(
   'audit/fetchLogs',
   async (params: { action?: string; entityType?: string } | undefined = {}, { rejectWithValue }) => {
     try {
-      const response = await api.get('/audit', { params });
-      return response.data.data;
+      return await auditService.getAuditLogs(params);
     } catch (err: any) {
       return rejectWithValue(err.response?.data?.message || 'Failed to fetch audit logs');
     }

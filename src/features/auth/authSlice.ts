@@ -1,6 +1,6 @@
 import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
-import { api, setApiAuthToken, setApiActiveOrgId } from '@/services/api';
-import { AuthState, User, Organization } from '@/types';
+import { authService, setApiAuthToken, setApiActiveOrgId } from '@/services/api';
+import { AuthState } from '@/types';
 import { LoginInput, RegisterInput } from '@/utils/validationSchemas';
 
 const initialState: AuthState = {
@@ -17,13 +17,7 @@ export const loginUser = createAsyncThunk(
   'auth/login',
   async (credentials: LoginInput, { rejectWithValue }) => {
     try {
-      const response = await api.post('/auth/login', credentials);
-      const data = response.data.data;
-      setApiAuthToken(data.accessToken);
-      if (data.activeOrgId) {
-        setApiActiveOrgId(data.activeOrgId);
-      }
-      return data;
+      return await authService.login(credentials);
     } catch (err: any) {
       return rejectWithValue(err.response?.data?.message || 'Login failed');
     }
@@ -34,8 +28,7 @@ export const registerUser = createAsyncThunk(
   'auth/register',
   async (data: RegisterInput, { rejectWithValue }) => {
     try {
-      const response = await api.post('/auth/register', data);
-      return response.data.data;
+      return await authService.register(data);
     } catch (err: any) {
       return rejectWithValue(err.response?.data?.message || 'Registration failed');
     }
@@ -46,8 +39,7 @@ export const fetchCurrentUser = createAsyncThunk(
   'auth/me',
   async (_, { rejectWithValue }) => {
     try {
-      const response = await api.get('/auth/me');
-      return response.data.data;
+      return await authService.getMe();
     } catch (err: any) {
       return rejectWithValue(err.response?.data?.message || 'Failed to fetch user session');
     }
@@ -56,15 +48,8 @@ export const fetchCurrentUser = createAsyncThunk(
 
 export const logoutUser = createAsyncThunk(
   'auth/logout',
-  async (_, { dispatch }) => {
-    try {
-      await api.post('/auth/logout');
-    } catch (err) {
-      // Ignore network errors on logout
-    } finally {
-      setApiAuthToken(null);
-      setApiActiveOrgId(null);
-    }
+  async () => {
+    await authService.logout();
   }
 );
 
@@ -72,9 +57,7 @@ export const switchOrganization = createAsyncThunk(
   'auth/switchOrg',
   async (organizationId: string, { rejectWithValue }) => {
     try {
-      const response = await api.post('/auth/switch-org', { organizationId });
-      setApiActiveOrgId(organizationId);
-      return response.data.data;
+      return await authService.switchOrg(organizationId);
     } catch (err: any) {
       return rejectWithValue(err.response?.data?.message || 'Failed to switch organization');
     }
@@ -99,7 +82,6 @@ const authSlice = createSlice({
   },
   extraReducers: (builder) => {
     builder
-      // Login
       .addCase(loginUser.pending, (state) => {
         state.isLoading = true;
         state.error = null;
@@ -108,14 +90,15 @@ const authSlice = createSlice({
         state.isLoading = false;
         state.user = action.payload.user;
         state.accessToken = action.payload.accessToken;
-        state.activeOrgId = action.payload.activeOrgId || null;
+        const orgId = action.payload.activeOrgId || action.payload.user?.organizationId || null;
+        state.activeOrgId = orgId;
+        if (orgId) setApiActiveOrgId(orgId);
         state.isAuthenticated = true;
       })
       .addCase(loginUser.rejected, (state, action) => {
         state.isLoading = false;
         state.error = action.payload as string;
       })
-      // Register
       .addCase(registerUser.pending, (state) => {
         state.isLoading = true;
         state.error = null;
@@ -127,7 +110,6 @@ const authSlice = createSlice({
         state.isLoading = false;
         state.error = action.payload as string;
       })
-      // Fetch me
       .addCase(fetchCurrentUser.pending, (state) => {
         state.isLoading = true;
       })
@@ -135,7 +117,9 @@ const authSlice = createSlice({
         state.isLoading = false;
         state.user = action.payload.user;
         state.activeOrg = action.payload.activeOrg || null;
-        state.activeOrgId = action.payload.activeOrg?.id || state.activeOrgId;
+        const orgId = action.payload.activeOrg?.id || action.payload.user?.organizationId || state.activeOrgId;
+        state.activeOrgId = orgId;
+        if (orgId) setApiActiveOrgId(orgId);
         state.isAuthenticated = true;
       })
       .addCase(fetchCurrentUser.rejected, (state) => {
@@ -143,7 +127,6 @@ const authSlice = createSlice({
         state.isAuthenticated = false;
         state.user = null;
       })
-      // Logout
       .addCase(logoutUser.fulfilled, (state) => {
         state.user = null;
         state.accessToken = null;
@@ -151,9 +134,10 @@ const authSlice = createSlice({
         state.activeOrg = null;
         state.isAuthenticated = false;
       })
-      // Switch Org
       .addCase(switchOrganization.fulfilled, (state, action) => {
-        state.activeOrgId = action.meta.arg;
+        const orgId = action.meta.arg;
+        state.activeOrgId = orgId;
+        setApiActiveOrgId(orgId);
         if (action.payload?.organization) {
           state.activeOrg = action.payload.organization;
         }

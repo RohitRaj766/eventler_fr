@@ -1,5 +1,5 @@
 import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
-import { api } from '@/services/api';
+import { programService } from '@/services/api';
 import { Program, Node, NodeStatus } from '@/types';
 import { CreateProgramInput } from '@/utils/validationSchemas';
 
@@ -23,8 +23,7 @@ export const fetchProgramTree = createAsyncThunk(
   'program/fetchTree',
   async (programId: string, { rejectWithValue }) => {
     try {
-      const response = await api.get(`/programs/${programId}`);
-      return response.data.data;
+      return await programService.getProgramTree(programId);
     } catch (err: any) {
       return rejectWithValue(err.response?.data?.message || 'Failed to fetch program tree');
     }
@@ -35,8 +34,7 @@ export const createProgram = createAsyncThunk(
   'program/create',
   async (data: CreateProgramInput, { rejectWithValue }) => {
     try {
-      const response = await api.post('/programs', data);
-      return response.data.data;
+      return await programService.createProgram(data);
     } catch (err: any) {
       return rejectWithValue(err.response?.data?.message || 'Failed to create program');
     }
@@ -47,8 +45,7 @@ export const updateProgramStatus = createAsyncThunk(
   'program/updateStatus',
   async ({ programId, status }: { programId: string; status: NodeStatus }, { rejectWithValue }) => {
     try {
-      const response = await api.patch(`/programs/${programId}/status`, { status });
-      return response.data.data;
+      return await programService.updateProgramStatus(programId, status);
     } catch (err: any) {
       return rejectWithValue(err.response?.data?.message || 'Failed to update program status');
     }

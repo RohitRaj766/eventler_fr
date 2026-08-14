@@ -1,5 +1,5 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
-import { api } from '@/services/api';
+import { venueService } from '@/services/api';
 import { Venue, Resource } from '@/types';
 import { CreateVenueInput, CreateResourceInput } from '@/utils/validationSchemas';
 
@@ -21,8 +21,7 @@ export const fetchVenues = createAsyncThunk(
   'venue/fetchAll',
   async (_, { rejectWithValue }) => {
     try {
-      const response = await api.get('/venues');
-      return response.data.data;
+      return await venueService.getVenues();
     } catch (err: any) {
       return rejectWithValue(err.response?.data?.message || 'Failed to fetch venues');
     }
@@ -33,8 +32,7 @@ export const createVenue = createAsyncThunk(
   'venue/create',
   async (data: CreateVenueInput, { rejectWithValue }) => {
     try {
-      const response = await api.post('/venues', data);
-      return response.data.data;
+      return await venueService.createVenue(data);
     } catch (err: any) {
       return rejectWithValue(err.response?.data?.message || 'Failed to create venue');
     }
@@ -45,8 +43,7 @@ export const fetchResources = createAsyncThunk(
   'venue/fetchResources',
   async (_, { rejectWithValue }) => {
     try {
-      const response = await api.get('/venues/resources');
-      return response.data.data;
+      return await venueService.getResources();
     } catch (err: any) {
       return rejectWithValue(err.response?.data?.message || 'Failed to fetch resources');
     }
@@ -57,8 +54,7 @@ export const createResource = createAsyncThunk(
   'venue/createResource',
   async (data: CreateResourceInput, { rejectWithValue }) => {
     try {
-      const response = await api.post('/venues/resources', data);
-      return response.data.data;
+      return await venueService.createResource(data);
     } catch (err: any) {
       return rejectWithValue(err.response?.data?.message || 'Failed to create resource');
     }

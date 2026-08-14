@@ -34,67 +34,69 @@ export function RegisterForm() {
   };
 
   return (
-    <Card className="w-full max-w-md shadow-2xl border-border/40 backdrop-blur">
-      <CardHeader className="space-y-2 text-center">
-        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-tr from-indigo-600 to-violet-500 text-white shadow-lg shadow-indigo-500/30">
+    <Card className="w-full max-w-md bg-white border border-slate-200/80 shadow-xl rounded-2xl p-2">
+      <CardHeader className="space-y-2 text-center pb-4">
+        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-600 text-white shadow-md shadow-indigo-200">
           <Sparkles className="h-6 w-6" />
         </div>
-        <CardTitle className="text-2xl font-bold tracking-tight">Create Eventler Account</CardTitle>
-        <CardDescription>
+        <CardTitle className="text-2xl font-bold tracking-tight text-slate-900">Create Eventler Account</CardTitle>
+        <CardDescription className="text-xs text-slate-500 font-medium">
           Register to coordinate events & schedule propagation
         </CardDescription>
       </CardHeader>
+
       <form onSubmit={handleSubmit(onSubmit)}>
-        <CardContent className="space-y-3">
+        <CardContent className="space-y-3 pt-0">
           {error && (
-            <div className="rounded-lg bg-red-500/10 p-3 text-xs font-medium text-red-500 border border-red-500/20">
+            <div className="rounded-lg bg-red-50 p-3 text-xs font-medium text-red-600 border border-red-200">
               {error}
             </div>
           )}
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
-              <label className="text-xs font-semibold">First Name</label>
-              <Input {...register('firstName')} placeholder="Jane" />
-              {errors.firstName && <p className="text-xs text-red-500">{errors.firstName.message}</p>}
+              <label className="text-xs font-semibold text-slate-700">First Name</label>
+              <Input {...register('firstName')} placeholder="Jane" className="h-9 text-xs bg-white border-slate-200 text-slate-900 placeholder:text-slate-400" />
+              {errors.firstName && <p className="text-xs text-red-500 font-medium">{errors.firstName.message}</p>}
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-semibold">Last Name</label>
-              <Input {...register('lastName')} placeholder="Doe" />
-              {errors.lastName && <p className="text-xs text-red-500">{errors.lastName.message}</p>}
+              <label className="text-xs font-semibold text-slate-700">Last Name</label>
+              <Input {...register('lastName')} placeholder="Doe" className="h-9 text-xs bg-white border-slate-200 text-slate-900 placeholder:text-slate-400" />
+              {errors.lastName && <p className="text-xs text-red-500 font-medium">{errors.lastName.message}</p>}
             </div>
           </div>
 
           <div className="space-y-1">
-            <label className="text-xs font-semibold">Email Address</label>
-            <Input {...register('email')} type="email" placeholder="jane@institution.edu" />
-            {errors.email && <p className="text-xs text-red-500">{errors.email.message}</p>}
+            <label className="text-xs font-semibold text-slate-700">Email Address</label>
+            <Input {...register('email')} type="email" placeholder="jane@institution.edu" className="h-9 text-xs bg-white border-slate-200 text-slate-900 placeholder:text-slate-400" />
+            {errors.email && <p className="text-xs text-red-500 font-medium">{errors.email.message}</p>}
           </div>
 
           <div className="space-y-1">
-            <label className="text-xs font-semibold">Phone Number (Optional)</label>
-            <Input {...register('phoneNumber')} placeholder="+1 234 567 890" />
+            <label className="text-xs font-semibold text-slate-700">Phone Number (Optional)</label>
+            <Input {...register('phoneNumber')} placeholder="+1 234 567 890" className="h-9 text-xs bg-white border-slate-200 text-slate-900 placeholder:text-slate-400" />
           </div>
 
           <div className="space-y-1">
-            <label className="text-xs font-semibold">Password</label>
-            <Input {...register('password')} type="password" placeholder="••••••••" />
-            {errors.password && <p className="text-xs text-red-500">{errors.password.message}</p>}
+            <label className="text-xs font-semibold text-slate-700">Password</label>
+            <Input {...register('password')} type="password" placeholder="••••••••" className="h-9 text-xs bg-white border-slate-200 text-slate-900 placeholder:text-slate-400" />
+            {errors.password && <p className="text-xs text-red-500 font-medium">{errors.password.message}</p>}
           </div>
 
           <div className="space-y-1">
-            <label className="text-xs font-semibold">Confirm Password</label>
-            <Input {...register('confirmPassword')} type="password" placeholder="••••••••" />
-            {errors.confirmPassword && <p className="text-xs text-red-500">{errors.confirmPassword.message}</p>}
+            <label className="text-xs font-semibold text-slate-700">Confirm Password</label>
+            <Input {...register('confirmPassword')} type="password" placeholder="••••••••" className="h-9 text-xs bg-white border-slate-200 text-slate-900 placeholder:text-slate-400" />
+            {errors.confirmPassword && <p className="text-xs text-red-500 font-medium">{errors.confirmPassword.message}</p>}
           </div>
         </CardContent>
-        <CardFooter className="flex flex-col gap-3">
-          <Button type="submit" className="w-full font-semibold" disabled={isLoading}>
+
+        <CardFooter className="flex flex-col gap-3 pt-2">
+          <Button type="submit" className="w-full h-10 font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-sm" disabled={isLoading}>
             {isLoading ? 'Creating Account...' : 'Register'}
           </Button>
-          <p className="text-xs text-center text-muted-foreground">
+          <p className="text-xs text-center text-slate-500 font-medium">
             Already have an account?{' '}
-            <Link href="/login" className="font-semibold text-primary hover:underline">
+            <Link href="/login" className="font-semibold text-indigo-600 hover:underline">
               Sign In
             </Link>
           </p>

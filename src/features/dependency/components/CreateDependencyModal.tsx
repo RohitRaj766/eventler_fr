@@ -64,24 +64,26 @@ export function CreateDependencyModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <LinkIcon className="h-5 w-5 text-indigo-400" />
+      <DialogContent className="sm:max-w-md bg-white border border-slate-200/80 shadow-2xl rounded-2xl p-6">
+        <DialogHeader className="space-y-1.5 pb-2 border-b border-slate-100">
+          <DialogTitle className="flex items-center gap-2 text-slate-900 font-bold text-lg">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600">
+              <LinkIcon className="h-4 w-4" />
+            </div>
             Link Node Dependency
           </DialogTitle>
-          <DialogDescription>
-            Establish topological dependency: <strong className="text-foreground">{predecessorNode?.name}</strong> must finish before the successor node starts.
+          <DialogDescription className="text-xs font-medium text-slate-500">
+            Establish topological dependency: <strong className="text-slate-900">{predecessorNode?.name}</strong> must finish before the successor node starts.
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit((data) => handleFormSubmit(data as CreateDependencyInput))} className="space-y-4">
+        <form onSubmit={handleSubmit((data) => handleFormSubmit(data as CreateDependencyInput))} className="space-y-4 pt-2">
           <input type="hidden" {...register('predecessorId')} />
 
-          <div className="space-y-1">
-            <label className="text-xs font-semibold">Select Successor Node</label>
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-slate-700">Select Successor Node</label>
             <Select onValueChange={(val) => setValue('successorId', val)}>
-              <SelectTrigger>
+              <SelectTrigger className="h-10 text-xs bg-white border-slate-200 text-slate-900">
                 <SelectValue placeholder="Select target node" />
               </SelectTrigger>
               <SelectContent>
@@ -95,40 +97,50 @@ export function CreateDependencyModal({
               </SelectContent>
             </Select>
             {errors.successorId && (
-              <p className="text-xs text-red-500">{errors.successorId.message}</p>
+              <p className="text-xs text-red-500 font-medium">{errors.successorId.message as string}</p>
             )}
           </div>
 
-          <div className="space-y-1">
-            <label className="text-xs font-semibold">Dependency Type</label>
-            <Select
-              onValueChange={(val) => setValue('type', val as any)}
-              defaultValue="FINISH_TO_START"
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select type" />
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-slate-700">Dependency Type</label>
+            <Select onValueChange={(val) => setValue('type', val as any)} defaultValue="FINISH_TO_START">
+              <SelectTrigger className="h-10 text-xs bg-white border-slate-200 text-slate-900">
+                <SelectValue placeholder="Dependency type" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="FINISH_TO_START">FINISH_TO_START (Standard)</SelectItem>
-                <SelectItem value="START_TO_START">START_TO_START (Parallel)</SelectItem>
-                <SelectItem value="FINISH_TO_FINISH">FINISH_TO_FINISH</SelectItem>
-                <SelectItem value="START_TO_FINISH">START_TO_FINISH</SelectItem>
+                <SelectItem value="FINISH_TO_START">Finish-to-Start (FS)</SelectItem>
+                <SelectItem value="START_TO_START">Start-to-Start (SS)</SelectItem>
+                <SelectItem value="FINISH_TO_FINISH">Finish-to-Finish (FF)</SelectItem>
+                <SelectItem value="START_TO_FINISH">Start-to-Finish (SF)</SelectItem>
               </SelectContent>
             </Select>
           </div>
 
-          <div className="space-y-1">
-            <label className="text-xs font-semibold">Lag / Lead Time (Minutes)</label>
-            <Input {...register('lagMinutes')} type="number" placeholder="0" />
-            <p className="text-[11px] text-muted-foreground">Positive for lag delay, negative for lead time buffer.</p>
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-slate-700">Lag Time (Minutes)</label>
+            <Input
+              {...register('lagMinutes')}
+              type="number"
+              placeholder="0"
+              className="h-10 text-xs bg-white border-slate-200 text-slate-900 focus-visible:ring-indigo-500"
+            />
           </div>
 
-          <DialogFooter className="pt-2">
-            <Button variant="outline" type="button" onClick={onClose}>
+          <DialogFooter className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
+            <Button
+              variant="outline"
+              type="button"
+              onClick={onClose}
+              className="h-9 text-xs font-semibold text-slate-700 border-slate-200 hover:bg-slate-50 rounded-lg"
+            >
               Cancel
             </Button>
-            <Button type="submit" disabled={isSubmitting}>
-              {isSubmitting ? 'Linking...' : 'Link Dependency'}
+            <Button
+              type="submit"
+              disabled={isSubmitting}
+              className="h-9 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-sm"
+            >
+              {isSubmitting ? 'Linking...' : 'Create Dependency'}
             </Button>
           </DialogFooter>
         </form>

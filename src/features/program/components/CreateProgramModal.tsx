@@ -2,8 +2,7 @@
 
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { createNodeSchema, CreateNodeInput } from '@/utils/validationSchemas';
-import { Node } from '@/types';
+import { createProgramSchema, CreateProgramInput } from '@/utils/validationSchemas';
 import {
   Dialog,
   DialogContent,
@@ -14,36 +13,29 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Plus } from 'lucide-react';
+import { FolderTree } from 'lucide-react';
 
-interface CreateNodeModalProps {
+interface CreateProgramModalProps {
   isOpen: boolean;
   onClose: () => void;
-  parentNode?: Node | null;
-  onSubmit: (data: CreateNodeInput) => Promise<void>;
+  onSubmit: (data: CreateProgramInput) => Promise<void>;
 }
 
-export function CreateNodeModal({ isOpen, onClose, parentNode, onSubmit }: CreateNodeModalProps) {
+export function CreateProgramModal({ isOpen, onClose, onSubmit }: CreateProgramModalProps) {
   const {
     register,
     handleSubmit,
-    setValue,
-    watch,
     reset,
     formState: { errors, isSubmitting },
-  } = useForm<CreateNodeInput>({
-    resolver: zodResolver(createNodeSchema),
+  } = useForm<CreateProgramInput>({
+    resolver: zodResolver(createProgramSchema),
     defaultValues: {
-      type: 'ACTIVITY',
       plannedStartTime: new Date().toISOString().slice(0, 16),
-      plannedEndTime: new Date(Date.now() + 3600000).toISOString().slice(0, 16),
+      plannedEndTime: new Date(Date.now() + 86400000).toISOString().slice(0, 16),
     },
   });
 
-  const selectedType = watch('type');
-
-  const handleFormSubmit = async (data: CreateNodeInput) => {
+  const handleFormSubmit = async (data: CreateProgramInput) => {
     await onSubmit(data);
     reset();
     onClose();
@@ -55,61 +47,34 @@ export function CreateNodeModal({ isOpen, onClose, parentNode, onSubmit }: Creat
         <DialogHeader className="space-y-1.5 pb-2 border-b border-slate-100">
           <DialogTitle className="flex items-center gap-2 text-slate-900 font-bold text-lg">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600">
-              <Plus className="h-4 w-4" />
+              <FolderTree className="h-4 w-4" />
             </div>
-            Add Sub-Node to {parentNode?.name || 'Program'}
+            Create Root Event Program
           </DialogTitle>
           <DialogDescription className="text-xs font-medium text-slate-500">
-            Create an arbitrary depth child node in your hierarchy execution tree.
+            Initialize a new root event program (e.g. Annual TechFest 2026, Research Conference).
           </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit(handleFormSubmit)} className="space-y-4 pt-2">
           <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-slate-700">Node Name</label>
+            <label className="text-xs font-semibold text-slate-700">Program Title</label>
             <Input
               {...register('name')}
-              placeholder="e.g. Keynote Session 1"
+              placeholder="e.g. Annual Tech Fest 2026"
               className="h-10 text-xs bg-white border-slate-200 text-slate-900 placeholder:text-slate-400 focus-visible:ring-indigo-500"
             />
             {errors.name && <p className="text-xs text-red-500 font-medium">{errors.name.message}</p>}
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-slate-700">Node Type Category</label>
-            <Select
-              onValueChange={(val) => setValue('type', val as any)}
-              defaultValue="ACTIVITY"
-            >
-              <SelectTrigger className="h-10 text-xs bg-white border-slate-200 text-slate-900">
-                <SelectValue placeholder="Select type" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="PROGRAM">Program Root</SelectItem>
-                <SelectItem value="ACTIVITY">Activity</SelectItem>
-                <SelectItem value="SESSION">Session</SelectItem>
-                <SelectItem value="ROUND">Round</SelectItem>
-                <SelectItem value="CEREMONY">Ceremony</SelectItem>
-                <SelectItem value="COMPETITION">Competition</SelectItem>
-                <SelectItem value="WORKSHOP">Workshop</SelectItem>
-                <SelectItem value="PRESENTATION">Presentation</SelectItem>
-                <SelectItem value="BREAK">Break</SelectItem>
-                <SelectItem value="TASK">Task Node</SelectItem>
-                <SelectItem value="CUSTOM">Custom Type</SelectItem>
-              </SelectContent>
-            </Select>
+            <label className="text-xs font-semibold text-slate-700">Description</label>
+            <Input
+              {...register('description')}
+              placeholder="Main annual engineering symposium"
+              className="h-10 text-xs bg-white border-slate-200 text-slate-900 placeholder:text-slate-400 focus-visible:ring-indigo-500"
+            />
           </div>
-
-          {selectedType === 'CUSTOM' && (
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-slate-700">Custom Type Name</label>
-              <Input
-                {...register('customTypeName')}
-                placeholder="e.g. Hackathon Track"
-                className="h-10 text-xs bg-white border-slate-200 text-slate-900 placeholder:text-slate-400 focus-visible:ring-indigo-500"
-              />
-            </div>
-          )}
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
@@ -151,7 +116,7 @@ export function CreateNodeModal({ isOpen, onClose, parentNode, onSubmit }: Creat
               disabled={isSubmitting}
               className="h-9 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-sm"
             >
-              {isSubmitting ? 'Saving...' : 'Add Node'}
+              {isSubmitting ? 'Initializing...' : 'Create Program'}
             </Button>
           </DialogFooter>
         </form>

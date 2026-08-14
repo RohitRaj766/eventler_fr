@@ -1,5 +1,5 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
-import { api } from '@/services/api';
+import { dependencyService } from '@/services/api';
 import { CreateDependencyInput } from '@/utils/validationSchemas';
 
 interface DependencyState {
@@ -16,8 +16,7 @@ export const createDependency = createAsyncThunk(
   'dependency/create',
   async (data: CreateDependencyInput, { rejectWithValue }) => {
     try {
-      const response = await api.post('/dependencies', data);
-      return response.data.data;
+      return await dependencyService.createDependency(data);
     } catch (err: any) {
       return rejectWithValue(err.response?.data?.message || 'Failed to link dependency');
     }
@@ -28,8 +27,7 @@ export const removeDependency = createAsyncThunk(
   'dependency/remove',
   async ({ predecessorId, successorId }: { predecessorId: string; successorId: string }, { rejectWithValue }) => {
     try {
-      const response = await api.delete(`/dependencies/${predecessorId}/${successorId}`);
-      return response.data.data;
+      return await dependencyService.removeDependency(predecessorId, successorId);
     } catch (err: any) {
       return rejectWithValue(err.response?.data?.message || 'Failed to remove dependency');
     }

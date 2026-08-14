@@ -3,17 +3,20 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { useAppDispatch, useAppSelector } from '@/app/hooks';
-import { fetchProgramTree, updateTreeRealtime } from '@/features/program/programSlice';
-import { createNode, moveNode, deleteNode } from '@/features/node/nodeSlice';
+import { fetchProgramTree, updateTreeRealtime, createProgram } from '@/features/program/programSlice';
+import { fetchMyOrganizations, createOrganization } from '@/features/org/orgSlice';
+import { createNode, deleteNode } from '@/features/node/nodeSlice';
 import { recordActualTime } from '@/features/liveEngine/liveEngineSlice';
 import { createDependency } from '@/features/dependency/dependencySlice';
 import { socketService } from '@/services/socket';
+import { getApiActiveOrgId } from '@/services/api';
 import { Node } from '@/types';
 import { NodeTreeContainer } from '@/features/node/components/NodeTreeContainer';
 import { CreateNodeModal } from '@/features/node/components/CreateNodeModal';
 import { RecordActualTimeModal } from '@/features/liveEngine/components/RecordActualTimeModal';
 import { CreateDependencyModal } from '@/features/dependency/components/CreateDependencyModal';
-import { CreateNodeInput, RecordActualTimeInput, CreateDependencyInput } from '@/utils/validationSchemas';
+import { CreateProgramModal } from '@/features/program/components/CreateProgramModal';
+import { CreateNodeInput, RecordActualTimeInput, CreateDependencyInput, CreateProgramInput } from '@/utils/validationSchemas';
 
 export default function ProgramTreePage() {
   const params = useParams();
@@ -21,6 +24,7 @@ export default function ProgramTreePage() {
   const dispatch = useAppDispatch();
   const { activeProgramTree } = useAppSelector((state) => state.program);
 
+  const [createProgramModalOpen, setCreateProgramModalOpen] = useState(false);
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [selectedParentNode, setSelectedParentNode] = useState<Node | null>(null);
 
@@ -31,6 +35,7 @@ export default function ProgramTreePage() {
   const [predecessorNode, setPredecessorNode] = useState<Node | null>(null);
 
   useEffect(() => {
+    dispatch(fetchMyOrganizations());
     if (programId && programId !== 'root') {
       dispatch(fetchProgramTree(programId));
       socketService.connect();
@@ -61,6 +66,30 @@ export default function ProgramTreePage() {
   const handleAddDependency = (node: Node) => {
     setPredecessorNode(node);
     setDepModalOpen(true);
+  };
+
+  const handleCreateProgramSubmit = async (data: CreateProgramInput) => {
+    try {
+      let currentOrgId = getApiActiveOrgId();
+      if (!currentOrgId) {
+        const orgs = await dispatch(fetchMyOrganizations()).unwrap();
+        if (!orgs || orgs.length === 0) {
+          const newOrg = await dispatch(
+            createOrganization({ name: 'Default Institution Org', code: 'DEFAULT-ORG' })
+          ).unwrap();
+          currentOrgId = newOrg?.id;
+        } else {
+          currentOrgId = orgs[0].id;
+        }
+      }
+
+      const newProg = await dispatch(createProgram(data)).unwrap();
+      if (newProg?.id) {
+        dispatch(fetchProgramTree(newProg.id));
+      }
+    } catch (err: any) {
+      console.error('Failed to create program:', err);
+    }
   };
 
   const handleCreateNodeSubmit = async (data: CreateNodeInput) => {
@@ -107,6 +136,13 @@ export default function ProgramTreePage() {
         onRecordTime={handleRecordTime}
         onAddDependency={handleAddDependency}
         onDelete={handleDeleteNode}
+        onCreateRootNode={() => setCreateProgramModalOpen(true)}
+      />
+
+      <CreateProgramModal
+        isOpen={createProgramModalOpen}
+        onClose={() => setCreateProgramModalOpen(false)}
+        onSubmit={handleCreateProgramSubmit}
       />
 
       <CreateNodeModal

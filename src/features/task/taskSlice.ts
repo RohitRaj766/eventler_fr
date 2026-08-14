@@ -1,6 +1,6 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
-import { api } from '@/services/api';
-import { Task, TaskStatus } from '@/types';
+import { taskService } from '@/services/api';
+import { Task } from '@/types';
 import { CreateTaskInput } from '@/utils/validationSchemas';
 
 interface TaskState {
@@ -21,8 +21,7 @@ export const fetchTasksByNode = createAsyncThunk(
   'task/fetchByNode',
   async (nodeId: string, { rejectWithValue }) => {
     try {
-      const response = await api.get(`/tasks/node/${nodeId}`);
-      return response.data.data;
+      return await taskService.getTasksByNode(nodeId);
     } catch (err: any) {
       return rejectWithValue(err.response?.data?.message || 'Failed to fetch tasks');
     }
@@ -33,8 +32,7 @@ export const createTask = createAsyncThunk(
   'task/create',
   async (data: CreateTaskInput, { rejectWithValue }) => {
     try {
-      const response = await api.post('/tasks', data);
-      return response.data.data;
+      return await taskService.createTask(data);
     } catch (err: any) {
       return rejectWithValue(err.response?.data?.message || 'Failed to create task');
     }
@@ -45,8 +43,7 @@ export const updateTask = createAsyncThunk(
   'task/update',
   async ({ id, updates }: { id: string; updates: Partial<Task> }, { rejectWithValue }) => {
     try {
-      const response = await api.patch(`/tasks/${id}`, updates);
-      return response.data.data;
+      return await taskService.updateTask(id, updates);
     } catch (err: any) {
       return rejectWithValue(err.response?.data?.message || 'Failed to update task');
     }

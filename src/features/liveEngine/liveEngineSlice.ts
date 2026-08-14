@@ -1,5 +1,5 @@
 import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
-import { api } from '@/services/api';
+import { liveEngineService } from '@/services/api';
 import { ScheduleChange } from '@/types';
 import { RecordActualTimeInput } from '@/utils/validationSchemas';
 
@@ -21,8 +21,7 @@ export const recordActualTime = createAsyncThunk(
   'liveEngine/recordActualTime',
   async (data: RecordActualTimeInput, { rejectWithValue }) => {
     try {
-      const response = await api.post('/live/actual-time', data);
-      return response.data.data;
+      return await liveEngineService.recordActualTime(data);
     } catch (err: any) {
       return rejectWithValue(err.response?.data?.message || 'Failed to record actual time');
     }
@@ -33,8 +32,7 @@ export const fetchScheduleChanges = createAsyncThunk(
   'liveEngine/fetchScheduleChanges',
   async (programId: string, { rejectWithValue }) => {
     try {
-      const response = await api.get(`/live/changes/${programId}`);
-      return response.data.data;
+      return await liveEngineService.getScheduleChanges(programId);
     } catch (err: any) {
       return rejectWithValue(err.response?.data?.message || 'Failed to fetch schedule changes');
     }

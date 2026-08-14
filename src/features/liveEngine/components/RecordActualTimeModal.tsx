@@ -58,49 +58,65 @@ export function RecordActualTimeModal({ isOpen, onClose, node, onSubmit }: Recor
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-indigo-400">
-            <Radio className="h-5 w-5 animate-pulse" />
-            Record Real-World Actual Time: {node?.name}
+      <DialogContent className="sm:max-w-md bg-white border border-slate-200/80 shadow-2xl rounded-2xl p-6">
+        <DialogHeader className="space-y-1.5 pb-2 border-b border-slate-100">
+          <DialogTitle className="flex items-center gap-2 text-slate-900 font-bold text-lg">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600">
+              <Radio className="h-4 w-4 animate-pulse" />
+            </div>
+            Record Live Timestamp: {node?.name}
           </DialogTitle>
-          <DialogDescription>
+          <DialogDescription className="text-xs font-medium text-slate-500">
             Log actual start/end timestamps. The topological propagation engine will recalculate all downstream node schedule impacts in real time.
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit(handleFormSubmit)} className="space-y-4">
+        <form onSubmit={handleSubmit(handleFormSubmit)} className="space-y-4 pt-2">
           <input type="hidden" {...register('nodeId')} />
 
-          <div className="space-y-1">
-            <label className="text-xs font-semibold">Actual Start Time</label>
-            <Input {...register('actualStartTime')} type="datetime-local" />
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-slate-700">Actual Start Time</label>
+            <Input
+              {...register('actualStartTime')}
+              type="datetime-local"
+              className="h-10 text-xs bg-white border-slate-200 text-slate-900 focus-visible:ring-indigo-500"
+            />
           </div>
 
-          <div className="space-y-1">
-            <label className="text-xs font-semibold">Actual End Time (Optional)</label>
-            <Input {...register('actualEndTime')} type="datetime-local" />
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-slate-700">Actual End Time (Optional)</label>
+            <Input
+              {...register('actualEndTime')}
+              type="datetime-local"
+              className="h-10 text-xs bg-white border-slate-200 text-slate-900 focus-visible:ring-indigo-500"
+            />
           </div>
 
-          <div className="space-y-1">
-            <label className="text-xs font-semibold">Reason for Live Update</label>
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-slate-700">Reason for Live Update</label>
             <Input
               {...register('reason')}
               placeholder="e.g. VIP Speaker delayed by 25 mins due to traffic"
+              className="h-10 text-xs bg-white border-slate-200 text-slate-900 placeholder:text-slate-400 focus-visible:ring-indigo-500"
             />
-            {errors.reason && <p className="text-xs text-red-500">{errors.reason.message}</p>}
+            {errors.reason && <p className="text-xs text-red-500 font-medium">{errors.reason.message}</p>}
           </div>
 
-          <DialogFooter className="pt-2">
-            <Button variant="outline" type="button" onClick={onClose}>
+          <DialogFooter className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
+            <Button
+              variant="outline"
+              type="button"
+              onClick={onClose}
+              className="h-9 text-xs font-semibold text-slate-700 border-slate-200 hover:bg-slate-50 rounded-lg"
+            >
               Cancel
             </Button>
             <Button
               type="submit"
               disabled={isSubmitting}
-              className="bg-gradient-to-r from-indigo-600 to-violet-600 text-white font-semibold shadow-md shadow-indigo-500/20"
+              className="h-9 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-sm"
             >
-              {isSubmitting ? 'Propagating Schedule...' : 'Log & Propagate Impact'}
+              {isSubmitting ? 'Propagating...' : 'Log & Recalculate'}
             </Button>
           </DialogFooter>
         </form>

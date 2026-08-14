@@ -1,5 +1,5 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
-import { api } from '@/services/api';
+import { organizationService, setApiActiveOrgId, getApiActiveOrgId } from '@/services/api';
 import { Organization } from '@/types';
 import { CreateOrgInput } from '@/utils/validationSchemas';
 
@@ -21,8 +21,14 @@ export const fetchMyOrganizations = createAsyncThunk(
   'org/fetchMy',
   async (_, { rejectWithValue }) => {
     try {
-      const response = await api.get('/organizations/my');
-      return response.data.data;
+      const orgs = await organizationService.getMyOrgs();
+      if (orgs && orgs.length > 0) {
+        const currentOrg = getApiActiveOrgId();
+        if (!currentOrg || !orgs.some((o: Organization) => o.id === currentOrg)) {
+          setApiActiveOrgId(orgs[0].id);
+        }
+      }
+      return orgs;
     } catch (err: any) {
       return rejectWithValue(err.response?.data?.message || 'Failed to fetch organizations');
     }
@@ -33,8 +39,11 @@ export const createOrganization = createAsyncThunk(
   'org/create',
   async (data: CreateOrgInput, { rejectWithValue }) => {
     try {
-      const response = await api.post('/organizations', data);
-      return response.data.data;
+      const newOrg = await organizationService.createOrg(data);
+      if (newOrg?.id) {
+        setApiActiveOrgId(newOrg.id);
+      }
+      return newOrg;
     } catch (err: any) {
       return rejectWithValue(err.response?.data?.message || 'Failed to create organization');
     }
@@ -45,8 +54,7 @@ export const fetchOrganizationDetails = createAsyncThunk(
   'org/fetchDetails',
   async (id: string, { rejectWithValue }) => {
     try {
-      const response = await api.get(`/organizations/${id}`);
-      return response.data.data;
+      return await organizationService.getOrgDetails(id);
     } catch (err: any) {
       return rejectWithValue(err.response?.data?.message || 'Failed to fetch org details');
     }
