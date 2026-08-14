@@ -1,10 +1,9 @@
-'use client';
-
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { updateNodeSchema } from '@/utils/validationSchemas';
 import { Node } from '@/types';
+import { venueService } from '@/services/api';
 import {
   Dialog,
   DialogContent,
@@ -16,7 +15,8 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { Pencil } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Pencil, MapPin } from 'lucide-react';
 
 interface EditNodeModalProps {
   isOpen: boolean;
@@ -26,15 +26,32 @@ interface EditNodeModalProps {
 }
 
 export function EditNodeModal({ isOpen, onClose, node, onSubmit }: EditNodeModalProps) {
+  const [venues, setVenues] = useState<any[]>([]);
+  const [isLoadingVenues, setIsLoadingVenues] = useState(false);
+
   const {
     register,
     handleSubmit,
     setValue,
+    watch,
     reset,
     formState: { errors, isSubmitting },
   } = useForm({
     resolver: zodResolver(updateNodeSchema),
   });
+
+  useEffect(() => {
+    if (isOpen) {
+      setIsLoadingVenues(true);
+      venueService
+        .getVenues()
+        .then((list) => {
+          if (Array.isArray(list)) setVenues(list);
+        })
+        .catch((err) => console.error('Failed to load venues dynamically:', err))
+        .finally(() => setIsLoadingVenues(false));
+    }
+  }, [isOpen]);
 
   useEffect(() => {
     if (node) {
@@ -43,6 +60,7 @@ export function EditNodeModal({ isOpen, onClose, node, onSubmit }: EditNodeModal
       setValue('type', node.type);
       setValue('customTypeName', node.customTypeName || '');
       setValue('status', node.status);
+      setValue('venueId', node.venueId || undefined);
       setValue('version', node.version || 1);
       if (node.plannedStartTime) {
         setValue('plannedStartTime', new Date(node.plannedStartTime).toISOString().slice(0, 16));
@@ -99,6 +117,32 @@ export function EditNodeModal({ isOpen, onClose, node, onSubmit }: EditNodeModal
               placeholder="Brief description of this session..."
               className="min-h-[70px] text-xs bg-white border-slate-200 text-slate-900 focus-visible:ring-indigo-500 resize-none"
             />
+          </div>
+
+          {/* Dynamic Venue Selection (Fetched from GET /api/v1/venues) */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-slate-700 flex items-center justify-between">
+              <span className="flex items-center gap-1">
+                <MapPin className="h-3.5 w-3.5 text-indigo-500" /> Venue & Stage Location
+              </span>
+              {isLoadingVenues && <span className="text-[10px] text-indigo-600 animate-pulse font-medium">Loading API venues...</span>}
+            </label>
+            <Select
+              value={watch('venueId') || 'none'}
+              onValueChange={(val) => setValue('venueId', val === 'none' ? undefined : val)}
+            >
+              <SelectTrigger className="h-10 text-xs bg-white border-slate-200 text-slate-900">
+                <SelectValue placeholder={isLoadingVenues ? 'Fetching venues...' : 'Select venue / stage (Optional)'} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">No Venue Assigned</SelectItem>
+                {venues.map((v) => (
+                  <SelectItem key={v.id} value={v.id}>
+                    {v.name} {v.building ? `(${v.building})` : ''} {v.capacity ? `• Cap: ${v.capacity}` : ''}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           <div className="grid grid-cols-2 gap-3">

@@ -1,9 +1,9 @@
-'use client';
-
+import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { createNodeSchema, CreateNodeInput } from '@/utils/validationSchemas';
 import { Node } from '@/types';
+import { venueService } from '@/services/api';
 import {
   Dialog,
   DialogContent,
@@ -15,7 +15,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Plus } from 'lucide-react';
+import { Plus, MapPin } from 'lucide-react';
 
 interface CreateNodeModalProps {
   isOpen: boolean;
@@ -25,6 +25,9 @@ interface CreateNodeModalProps {
 }
 
 export function CreateNodeModal({ isOpen, onClose, parentNode, onSubmit }: CreateNodeModalProps) {
+  const [venues, setVenues] = useState<any[]>([]);
+  const [isLoadingVenues, setIsLoadingVenues] = useState(false);
+
   const {
     register,
     handleSubmit,
@@ -40,6 +43,19 @@ export function CreateNodeModal({ isOpen, onClose, parentNode, onSubmit }: Creat
       plannedEndTime: new Date(Date.now() + 3600000).toISOString().slice(0, 16),
     },
   });
+
+  useEffect(() => {
+    if (isOpen) {
+      setIsLoadingVenues(true);
+      venueService
+        .getVenues()
+        .then((list) => {
+          if (Array.isArray(list)) setVenues(list);
+        })
+        .catch((err) => console.error('Failed to load venues dynamically:', err))
+        .finally(() => setIsLoadingVenues(false));
+    }
+  }, [isOpen]);
 
   const selectedType = watch('type');
 
@@ -115,6 +131,29 @@ export function CreateNodeModal({ isOpen, onClose, parentNode, onSubmit }: Creat
               />
             </div>
           )}
+
+          {/* Dynamic Venue Selection (Fetched from GET /api/v1/venues) */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-slate-700 flex items-center justify-between">
+              <span className="flex items-center gap-1">
+                <MapPin className="h-3.5 w-3.5 text-indigo-500" /> Venue & Stage Location
+              </span>
+              {isLoadingVenues && <span className="text-[10px] text-indigo-600 animate-pulse font-medium">Loading API venues...</span>}
+            </label>
+            <Select onValueChange={(val) => setValue('venueId', val === 'none' ? undefined : val)}>
+              <SelectTrigger className="h-10 text-xs bg-white border-slate-200 text-slate-900">
+                <SelectValue placeholder={isLoadingVenues ? 'Fetching venues...' : 'Select venue / stage (Optional)'} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">No Venue Assigned</SelectItem>
+                {venues.map((v) => (
+                  <SelectItem key={v.id} value={v.id}>
+                    {v.name} {v.building ? `(${v.building})` : ''} {v.capacity ? `• Cap: ${v.capacity}` : ''}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">

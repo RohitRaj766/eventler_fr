@@ -68,6 +68,7 @@ export const createNodeSchema = z.object({
   customTypeName: z.string().optional(),
   plannedStartTime: z.string().min(1, 'Planned start time is required'),
   plannedEndTime: z.string().min(1, 'Planned end time is required'),
+  venueId: z.string().optional(),
   sortOrder: z.number().optional(),
 }).refine((data) => new Date(data.plannedEndTime) > new Date(data.plannedStartTime), {
   message: 'End time must be after start time',
@@ -130,6 +131,7 @@ export const updateNodeSchema = z.object({
   customTypeName: z.string().optional(),
   plannedStartTime: z.string().optional(),
   plannedEndTime: z.string().optional(),
+  venueId: z.string().optional().nullable(),
   status: z.enum(['SCHEDULED', 'READY', 'IN_PROGRESS', 'COMPLETED', 'DELAYED', 'SKIPPED', 'CANCELLED']).optional(),
   sortOrder: z.number().optional(),
   version: z.number().optional(),
