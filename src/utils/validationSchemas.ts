@@ -90,13 +90,26 @@ export const createDependencySchema = z.object({
 });
 
 export const createTaskSchema = z.object({
-  nodeId: z.string().min(1, 'Target node ID is required'),
-  title: z.string().min(3, 'Task title is required'),
-  description: z.string().optional(),
+  nodeId: z.string().min(1, 'Target session/stage node is required'),
+  title: z.string()
+    .min(3, 'Task title must be at least 3 characters long')
+    .max(100, 'Task title cannot exceed 100 characters'),
+  description: z.string()
+    .max(500, 'Description cannot exceed 500 characters')
+    .optional()
+    .or(z.literal('')),
   priority: z.enum(['LOW', 'MEDIUM', 'HIGH', 'URGENT']),
   status: z.enum(['PENDING', 'IN_PROGRESS', 'READY', 'COMPLETED', 'BLOCKED']),
-  deadline: z.string().optional(),
+  deadline: z.string().optional().or(z.literal('')),
   assignedUserIds: z.array(z.string()).optional(),
+}).refine((data) => {
+  if (data.deadline && data.deadline.trim() !== '') {
+    return new Date(data.deadline).getTime() >= Date.now() - 60000;
+  }
+  return true;
+}, {
+  message: 'Deadline cannot be in the past',
+  path: ['deadline'],
 });
 
 export const createVenueSchema = z.object({

@@ -17,4 +17,15 @@ export const taskService = {
     const response = await axiosInstance.get(`/tasks/node/${nodeId}`);
     return response.data.data;
   },
+
+  async getAllTasks(programId?: string) {
+    const params = programId ? { programId } : {};
+    const response = await axiosInstance.get('/tasks', { params });
+    return response.data.data;
+  },
+
+  async getTaskEnums() {
+    const response = await axiosInstance.get('/tasks/enums');
+    return response.data.data as { statuses: string[]; priorities: string[] };
+  },
 };

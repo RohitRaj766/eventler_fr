@@ -28,6 +28,17 @@ export const fetchTasksByNode = createAsyncThunk(
   }
 );
 
+export const fetchAllTasks = createAsyncThunk(
+  'task/fetchAll',
+  async (programId: string | undefined, { rejectWithValue }) => {
+    try {
+      return await taskService.getAllTasks(programId);
+    } catch (err: any) {
+      return rejectWithValue(err.response?.data?.message || 'Failed to fetch tasks');
+    }
+  }
+);
+
 export const createTask = createAsyncThunk(
   'task/create',
   async (data: CreateTaskInput, { rejectWithValue }) => {
@@ -63,13 +74,26 @@ const taskSlice = createSlice({
         state.isLoading = false;
         state.nodeTasks = action.payload || [];
       })
+      .addCase(fetchAllTasks.pending, (state) => {
+        state.isLoading = true;
+      })
+      .addCase(fetchAllTasks.fulfilled, (state, action) => {
+        state.isLoading = false;
+        state.allOrgTasks = action.payload || [];
+        state.nodeTasks = action.payload || [];
+      })
       .addCase(createTask.fulfilled, (state, action) => {
-        state.nodeTasks.push(action.payload);
+        state.nodeTasks.unshift(action.payload);
+        state.allOrgTasks.unshift(action.payload);
       })
       .addCase(updateTask.fulfilled, (state, action) => {
         const index = state.nodeTasks.findIndex((t) => t.id === action.payload.id);
         if (index !== -1) {
           state.nodeTasks[index] = action.payload;
+        }
+        const orgIndex = state.allOrgTasks.findIndex((t) => t.id === action.payload.id);
+        if (orgIndex !== -1) {
+          state.allOrgTasks[orgIndex] = action.payload;
         }
       });
   },

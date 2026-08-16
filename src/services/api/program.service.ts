@@ -13,9 +13,17 @@ export const programService = {
     return response.data.data;
   },
 
+  async getUserPrograms() {
+    return this.getOrgPrograms();
+  },
+
   async getProgramTree(id: string) {
     const response = await axiosInstance.get(`/programs/${id}`);
     return response.data.data;
+  },
+
+  async getProgramById(id: string) {
+    return this.getProgramTree(id);
   },
 
   async updateProgramStatus(id: string, status: NodeStatus) {

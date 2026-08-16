@@ -1,27 +1,46 @@
-'use client';
-
+import { useEffect, useState } from 'react';
 import { Task, TaskStatus } from '@/types';
 import { getPriorityBadgeColor } from '@/utils/formatters';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { CheckSquare, Plus, Clock, User as UserIcon } from 'lucide-react';
+import { taskService } from '@/services/api';
 
 interface TaskBoardProps {
   tasks: Task[];
   onAddTask?: () => void;
-  onUpdateStatus?: (taskId: string, status: TaskStatus) => void;
+  onUpdateStatus?: (taskId: string, status: TaskStatus, version?: number) => void;
 }
 
-const columns: { status: TaskStatus; label: string; color: string }[] = [
-  { status: 'PENDING', label: 'Pending', color: 'border-slate-500/40 text-slate-400' },
-  { status: 'IN_PROGRESS', label: 'In Progress', color: 'border-blue-500/40 text-blue-400' },
-  { status: 'READY', label: 'Ready', color: 'border-cyan-500/40 text-cyan-400' },
-  { status: 'COMPLETED', label: 'Completed', color: 'border-emerald-500/40 text-emerald-400' },
-  { status: 'BLOCKED', label: 'Blocked', color: 'border-red-500/40 text-red-400' },
-];
+const statusColorMap: Record<string, string> = {
+  PENDING: 'border-slate-500/40 text-slate-400',
+  IN_PROGRESS: 'border-blue-500/40 text-blue-400',
+  READY: 'border-cyan-500/40 text-cyan-400',
+  COMPLETED: 'border-emerald-500/40 text-emerald-400',
+  BLOCKED: 'border-red-500/40 text-red-400',
+};
 
 export function TaskBoard({ tasks, onAddTask, onUpdateStatus }: TaskBoardProps) {
+  const [statuses, setStatuses] = useState<string[]>(['PENDING', 'IN_PROGRESS', 'READY', 'COMPLETED', 'BLOCKED']);
+
+  useEffect(() => {
+    taskService
+      .getTaskEnums()
+      .then((data) => {
+        if (data?.statuses && Array.isArray(data.statuses) && data.statuses.length > 0) {
+          setStatuses(data.statuses);
+        }
+      })
+      .catch((err) => console.error('Failed to load dynamic task enums:', err));
+  }, []);
+
+  const columns = statuses.map((status) => ({
+    status: status as TaskStatus,
+    label: status.replace('_', ' '),
+    color: statusColorMap[status] || 'border-slate-500/40 text-slate-400',
+  }));
+
   return (
     <Card className="border-border/60 shadow-lg">
       <CardHeader className="flex flex-row items-center justify-between border-b pb-4">
@@ -95,14 +114,14 @@ export function TaskBoard({ tasks, onAddTask, onUpdateStatus }: TaskBoardProps) 
 
                           <select
                             value={task.status}
-                            onChange={(e) => onUpdateStatus?.(task.id, e.target.value as TaskStatus)}
-                            className="bg-transparent text-[10px] font-medium border rounded px-1 py-0.5 cursor-pointer text-muted-foreground hover:text-foreground"
+                            onChange={(e) => onUpdateStatus?.(task.id, e.target.value as TaskStatus, task.version)}
+                            className="bg-slate-900 text-[10px] font-bold border border-slate-700 rounded px-1.5 py-1 cursor-pointer text-indigo-300 hover:text-white"
                           >
-                            <option value="PENDING">PENDING</option>
-                            <option value="IN_PROGRESS">IN_PROGRESS</option>
-                            <option value="READY">READY</option>
-                            <option value="COMPLETED">COMPLETED</option>
-                            <option value="BLOCKED">BLOCKED</option>
+                            {statuses.map((st) => (
+                              <option key={st} value={st}>
+                                {st.replace('_', ' ')}
+                              </option>
+                            ))}
                           </select>
                         </div>
                       </div>
