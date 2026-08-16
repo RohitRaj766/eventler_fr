@@ -11,10 +11,45 @@ export const axiosInstance = axios.create({
 });
 
 let inMemoryToken: string | null = null;
+let inMemoryRefreshToken: string | null = null;
 let activeOrgId: string | null = null;
 
 export function setApiAuthToken(token: string | null) {
   inMemoryToken = token;
+  if (typeof window !== 'undefined') {
+    if (token) {
+      localStorage.setItem('eventler_access_token', token);
+    } else {
+      localStorage.removeItem('eventler_access_token');
+    }
+  }
+}
+
+export function getApiAuthToken(): string | null {
+  if (inMemoryToken) return inMemoryToken;
+  if (typeof window !== 'undefined') {
+    return localStorage.getItem('eventler_access_token');
+  }
+  return null;
+}
+
+export function setApiRefreshToken(token: string | null) {
+  inMemoryRefreshToken = token;
+  if (typeof window !== 'undefined') {
+    if (token) {
+      localStorage.setItem('eventler_refresh_token', token);
+    } else {
+      localStorage.removeItem('eventler_refresh_token');
+    }
+  }
+}
+
+export function getApiRefreshToken(): string | null {
+  if (inMemoryRefreshToken) return inMemoryRefreshToken;
+  if (typeof window !== 'undefined') {
+    return localStorage.getItem('eventler_refresh_token');
+  }
+  return null;
 }
 
 export function setApiActiveOrgId(orgId: string | null) {
@@ -38,8 +73,9 @@ export function getApiActiveOrgId(): string | null {
 
 axiosInstance.interceptors.request.use(
   (config) => {
-    if (inMemoryToken) {
-      config.headers.Authorization = `Bearer ${inMemoryToken}`;
+    const token = getApiAuthToken();
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
     }
     const currentOrgId = getApiActiveOrgId();
     if (currentOrgId) {
@@ -62,19 +98,23 @@ axiosInstance.interceptors.response.use(
     ) {
       originalRequest._retry = true;
       try {
+        const storedRefreshToken = getApiRefreshToken();
         const refreshResponse = await axios.post(
           `${API_BASE_URL}/auth/refresh`,
-          {},
+          { refreshToken: storedRefreshToken },
           { withCredentials: true }
         );
         const newToken = refreshResponse.data?.data?.accessToken;
+        const newRefreshToken = refreshResponse.data?.data?.refreshToken;
         if (newToken) {
           setApiAuthToken(newToken);
+          if (newRefreshToken) setApiRefreshToken(newRefreshToken);
           originalRequest.headers.Authorization = `Bearer ${newToken}`;
           return axiosInstance(originalRequest);
         }
       } catch (refreshErr) {
         setApiAuthToken(null);
+        setApiRefreshToken(null);
       }
     }
     return Promise.reject(error);
