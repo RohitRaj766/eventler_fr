@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { createTaskSchema, CreateTaskInput } from '@/utils/validationSchemas';
-import { programService } from '@/services/api';
+import { programService, taskService } from '@/services/api';
 import {
   Dialog,
   DialogContent,
@@ -49,10 +49,10 @@ export function CreateTaskModal({ isOpen, onClose, nodeId = '', nodes = [], onSu
 
   useEffect(() => {
     if (isOpen) {
-      taskService.getTaskEnums().then((data) => {
+      taskService.getTaskEnums().then((data: any) => {
         if (data?.priorities && Array.isArray(data.priorities)) setEnumPriorities(data.priorities);
         if (data?.statuses && Array.isArray(data.statuses)) setEnumStatuses(data.statuses);
-      }).catch(err => console.error('Failed to load task enums in modal:', err));
+      }).catch((err: any) => console.error('Failed to load task enums in modal:', err));
     }
   }, [isOpen]);
 
