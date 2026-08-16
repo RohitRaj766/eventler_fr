@@ -5,7 +5,9 @@ export const authService = {
   async login(credentials: LoginInput) {
     const response = await axiosInstance.post('/auth/login', credentials);
     const data = response.data.data;
-    setApiAuthToken(data.accessToken);
+    if (data.accessToken) {
+      setApiAuthToken(data.accessToken);
+    }
     if (data.activeOrgId) {
       setApiActiveOrgId(data.activeOrgId);
     }
