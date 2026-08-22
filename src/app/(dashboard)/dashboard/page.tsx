@@ -1,317 +1,345 @@
 'use client';
 
-import { useEffect } from 'react';
-import { useAppDispatch, useAppSelector } from '@/app/hooks';
-import { fetchMyOrganizations } from '@/features/org/orgSlice';
-import { Card } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
+import { useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import {
-  Calendar as CalendarIcon,
-  Download,
-  ChevronRight,
-  Download as ExportIcon,
-  FolderTree,
-  Radio,
-  CheckSquare,
+  Activity,
+  AlertTriangle,
+  ArrowRight,
   Building2,
+  CalendarRange,
+  CheckCircle2,
+  ClipboardList,
+  Plus,
+  Radio,
+  Users,
 } from 'lucide-react';
+import { useAppDispatch, useAppSelector } from '@/app/hooks';
+import { fetchPrograms } from '@/features/program/programSlice';
+import { fetchOrgTasks } from '@/features/task/taskSlice';
+import { fetchOrganizationDetails } from '@/features/org/orgSlice';
+import { usePermissions } from '@/hooks/usePermission';
+import { useNow } from '@/hooks/useNow';
+import { Can } from '@/components/auth/Can';
+import { PageHeader } from '@/components/ui/page-header';
+import { StatCard } from '@/components/ui/stat-card';
+import { StatusBadge } from '@/components/ui/status-badge';
+import { Button } from '@/components/ui/button';
+import { EmptyState, ErrorState, SkeletonCards, SkeletonText } from '@/components/ui/states';
+import { formatDateTime, formatRelativeTime, fullName } from '@/utils/formatters';
+import type { Program, Task } from '@/types';
 
+const ACTIVE_PROGRAM_STATUSES = new Set(['PLANNED', 'PUBLISHED', 'LIVE']);
+const OPEN_TASK_STATUSES = new Set(['PENDING', 'IN_PROGRESS', 'READY', 'BLOCKED']);
+
+/**
+ * Operations overview.
+ *
+ * Every number is derived from the programs and tasks the API returns for the
+ * active organization — nothing here is a placeholder. When the org is empty
+ * the page says so and points at the next action instead of showing zeros.
+ */
 export default function DashboardPage() {
   const dispatch = useAppDispatch();
-  const { user } = useAppSelector((state) => state.auth);
+  const { can } = usePermissions();
+  // Read the clock outside render so overdue counts stay pure and self-refresh.
+  const now = useNow();
+
+  const user = useAppSelector((state) => state.auth.user);
+  const activeOrgId = useAppSelector((state) => state.auth.activeOrgId);
+  const { programs, isLoadingPrograms, programsError } = useAppSelector((state) => state.program);
+  const { tasks, isLoading: isLoadingTasks } = useAppSelector((state) => state.task);
+  const orgDetails = useAppSelector((state) => state.org.details);
+
+  const canReadPrograms = can(['program.read', 'program.create']);
+  const canReadTasks = can('task.read');
 
   useEffect(() => {
-    dispatch(fetchMyOrganizations());
-  }, [dispatch]);
+    if (canReadPrograms) void dispatch(fetchPrograms());
+  }, [dispatch, canReadPrograms, activeOrgId]);
 
-  const userName = user?.firstName || 'Alex';
+  useEffect(() => {
+    if (canReadTasks) void dispatch(fetchOrgTasks());
+  }, [dispatch, canReadTasks, activeOrgId]);
+
+  useEffect(() => {
+    if (activeOrgId && can('org.read')) void dispatch(fetchOrganizationDetails(activeOrgId));
+  }, [dispatch, activeOrgId, can]);
+
+  const stats = useMemo(() => {
+    const live = programs.filter((program) => program.status === 'LIVE');
+    const active = programs.filter((program) => ACTIVE_PROGRAM_STATUSES.has(program.status));
+    const completed = programs.filter((program) => program.status === 'COMPLETED');
+    const drafts = programs.filter((program) => program.status === 'DRAFT');
+
+    const openTasks = tasks.filter((task) => OPEN_TASK_STATUSES.has(task.status));
+    const urgent = openTasks.filter(
+      (task) => task.priority === 'URGENT' || task.priority === 'HIGH',
+    );
+    const overdue = now
+      ? openTasks.filter((task) => task.deadline && new Date(task.deadline).getTime() < now)
+      : [];
+
+    return { live, active, completed, drafts, openTasks, urgent, overdue };
+  }, [programs, tasks, now]);
+
+  const recentPrograms = useMemo(
+    () =>
+      [...programs]
+        .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+        .slice(0, 5),
+    [programs],
+  );
+
+  const priorityTasks = useMemo(
+    () =>
+      [...stats.openTasks]
+        .sort((a, b) => {
+          const rank = { URGENT: 0, HIGH: 1, MEDIUM: 2, LOW: 3 } as const;
+          const byPriority = rank[a.priority] - rank[b.priority];
+          if (byPriority !== 0) return byPriority;
+          const aDue = a.deadline ? new Date(a.deadline).getTime() : Infinity;
+          const bDue = b.deadline ? new Date(b.deadline).getTime() : Infinity;
+          return aDue - bDue;
+        })
+        .slice(0, 6),
+    [stats.openTasks],
+  );
+
+  const isLoading = isLoadingPrograms || isLoadingTasks;
+  const isEmptyOrg = !isLoading && !programs.length && !tasks.length;
 
   return (
-    <div className="space-y-6 pb-8">
-      {/* Top Header Row: Page Title + Date Picker + Download Button */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900">
-            Event Coordination Dashboard
-          </h1>
-          <p className="text-xs text-slate-500 font-medium">
-            Live Event Orchestration & Dynamic Topological Impact Engine
-          </p>
-        </div>
-
-        <div className="flex items-center gap-3">
-          {/* Date Range Picker Pill */}
-          <button className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 shadow-xs hover:bg-slate-50 transition-colors">
-            <CalendarIcon className="h-3.5 w-3.5 text-slate-500" />
-            <span>18 Jul 2026 - 14 Aug 2026</span>
-          </button>
-
-          {/* Download Action Button */}
-          <Button size="sm" className="h-9 font-bold bg-black text-white hover:bg-slate-800 rounded-lg shadow-sm">
-            <Download className="mr-2 h-3.5 w-3.5" />
-            Export Schedule
-          </Button>
-        </div>
-      </div>
-
-      {/* Metric Cards Grid Row (4 Columns - Matching Screenshot 1:1) */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
-        {/* Card 1: Hero Greeting Banner */}
-        <Card className="lg:col-span-1 border border-slate-200/80 bg-white shadow-xs rounded-2xl flex flex-col justify-between p-5 relative overflow-hidden">
-          <div className="space-y-2">
-            <h3 className="font-bold text-lg text-slate-900 flex items-center gap-2">
-              Welcome back {userName}! 🎉
-            </h3>
-            <p className="text-xs text-slate-500 font-medium">Chief Coordinator of the Month</p>
-
-            <div className="pt-3">
-              <div className="text-2xl font-extrabold text-slate-900 tracking-tight">
-                98.4% On-Time
-              </div>
-              <span className="text-[11px] font-bold text-emerald-600">
-                +65% <span className="font-medium text-slate-400">from last month</span>
-              </span>
-            </div>
-          </div>
-
-          <div className="pt-4 flex justify-end">
-            <Link href="/programs/root">
-              <Button variant="outline" size="sm" className="text-xs font-semibold rounded-lg h-8 border-slate-200">
-                Tree Builder
-              </Button>
-            </Link>
-          </div>
-        </Card>
-
-        {/* Card 2: Active Program Nodes */}
-        <Card className="border border-slate-200/80 bg-white shadow-xs rounded-2xl flex flex-col justify-between p-5">
-          <div>
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-slate-500">Active Program Nodes</span>
-              <span className="text-xs font-bold text-emerald-600 flex items-center">
-                +6.1%
-              </span>
-            </div>
-            <div className="text-2xl font-extrabold text-slate-900 mt-3 tracking-tight">
-              34.1K Nodes
-            </div>
-          </div>
-          <Link href="/programs/root" className="pt-4 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500 font-medium hover:text-slate-900">
-            <span>View tree</span>
-            <ChevronRight className="h-3.5 w-3.5" />
-          </Link>
-        </Card>
-
-        {/* Card 3: Active Coordinators */}
-        <Card className="border border-slate-200/80 bg-white shadow-xs rounded-2xl flex flex-col justify-between p-5">
-          <div>
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-slate-500">Active Coordinators</span>
-              <span className="text-xs font-bold text-emerald-600 flex items-center">
-                +19.2%
-              </span>
-            </div>
-            <div className="text-2xl font-extrabold text-slate-900 mt-3 tracking-tight">
-              500.1K Users
-            </div>
-          </div>
-          <Link href="/roles" className="pt-4 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500 font-medium hover:text-slate-900">
-            <span>View members</span>
-            <ChevronRight className="h-3.5 w-3.5" />
-          </Link>
-        </Card>
-
-        {/* Card 4: Avg Schedule Lag */}
-        <Card className="border border-slate-200/80 bg-white shadow-xs rounded-2xl flex flex-col justify-between p-5">
-          <div>
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-slate-500">Avg Schedule Lag</span>
-              <span className="text-xs font-bold text-emerald-600 flex items-center">
-                -1.2%
-              </span>
-            </div>
-            <div className="text-2xl font-extrabold text-slate-900 mt-3 tracking-tight">
-              2.1 min lag
-            </div>
-          </div>
-          <Link href="/live-engine" className="pt-4 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500 font-medium hover:text-slate-900">
-            <span>View propagation</span>
-            <ChevronRight className="h-3.5 w-3.5" />
-          </Link>
-        </Card>
-      </div>
-
-      {/* Quick Access Event Domain Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Link href="/programs/root" className="block">
-          <Card className="p-4 border border-slate-200/80 hover:border-slate-400 transition-all rounded-xl flex items-center gap-3">
-            <div className="h-10 w-10 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
-              <FolderTree className="h-5 w-5" />
-            </div>
-            <div>
-              <h4 className="font-bold text-xs text-slate-900">Program Tree Builder</h4>
-              <p className="text-[11px] text-slate-500">Arbitrary depth tree model</p>
-            </div>
-          </Card>
-        </Link>
-
-        <Link href="/live-engine" className="block">
-          <Card className="p-4 border border-slate-200/80 hover:border-slate-400 transition-all rounded-xl flex items-center gap-3">
-            <div className="h-10 w-10 rounded-lg bg-purple-50 text-purple-600 flex items-center justify-center shrink-0">
-              <Radio className="h-5 w-5" />
-            </div>
-            <div>
-              <h4 className="font-bold text-xs text-slate-900">Live Engine Control</h4>
-              <p className="text-[11px] text-slate-500">Log actual timestamps</p>
-            </div>
-          </Card>
-        </Link>
-
-        <Link href="/tasks" className="block">
-          <Card className="p-4 border border-slate-200/80 hover:border-slate-400 transition-all rounded-xl flex items-center gap-3">
-            <div className="h-10 w-10 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
-              <CheckSquare className="h-5 w-5" />
-            </div>
-            <div>
-              <h4 className="font-bold text-xs text-slate-900">Task Readiness</h4>
-              <p className="text-[11px] text-slate-500">Kanban readiness board</p>
-            </div>
-          </Card>
-        </Link>
-
-        <Link href="/venues" className="block">
-          <Card className="p-4 border border-slate-200/80 hover:border-slate-400 transition-all rounded-xl flex items-center gap-3">
-            <div className="h-10 w-10 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
-              <Building2 className="h-5 w-5" />
-            </div>
-            <div>
-              <h4 className="font-bold text-xs text-slate-900">Venues & Equipment</h4>
-              <p className="text-[11px] text-slate-500">Resource inventory</p>
-            </div>
-          </Card>
-        </Link>
-      </div>
-
-      {/* Analytics Charts & Details Row (2 Columns Grid - Matching Screenshot 1:1) */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        {/* Left Card: Total Execution Volume */}
-        <Card className="border border-slate-200/80 bg-white shadow-xs rounded-2xl p-6 flex flex-col justify-between">
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="font-bold text-base text-slate-900">Total Node Execution Volume</h3>
-              <p className="text-xs text-slate-500 font-medium mt-0.5">Node completions in the last 28 days</p>
-            </div>
-            <div className="flex items-center gap-3 border rounded-xl px-3 py-1.5 text-xs bg-slate-50 font-semibold text-slate-700">
-              <span>PLANNED <strong className="text-slate-900 font-bold ml-1">24,828</strong></span>
-              <span className="text-slate-300">|</span>
-              <span>ACTUAL <strong className="text-slate-900 font-bold ml-1">25,010</strong></span>
-            </div>
-          </div>
-
-          {/* Bar Chart Visual Component */}
-          <div className="mt-8 pt-4 pb-2">
-            <div className="flex items-end justify-between h-48 px-4 gap-3 border-b border-slate-200/60 pb-2">
-              <div className="flex flex-col items-center gap-1.5 flex-1 h-full justify-end">
-                <div className="flex items-end gap-1 w-full justify-center">
-                  <div className="w-5 bg-black rounded-t-sm h-28" />
-                  <div className="w-5 bg-slate-600 rounded-t-sm h-36" />
-                </div>
-                <span className="text-[11px] font-medium text-slate-500">January</span>
-              </div>
-              <div className="flex flex-col items-center gap-1.5 flex-1 h-full justify-end">
-                <div className="flex items-end gap-1 w-full justify-center">
-                  <div className="w-5 bg-black rounded-t-sm h-40" />
-                  <div className="w-5 bg-slate-600 rounded-t-sm h-32" />
-                </div>
-                <span className="text-[11px] font-medium text-slate-500">February</span>
-              </div>
-              <div className="flex flex-col items-center gap-1.5 flex-1 h-full justify-end">
-                <div className="flex items-end gap-1 w-full justify-center">
-                  <div className="w-5 bg-black rounded-t-sm h-44" />
-                  <div className="w-5 bg-slate-600 rounded-t-sm h-20" />
-                </div>
-                <span className="text-[11px] font-medium text-slate-500">March</span>
-              </div>
-              <div className="flex flex-col items-center gap-1.5 flex-1 h-full justify-end">
-                <div className="flex items-end gap-1 w-full justify-center">
-                  <div className="w-5 bg-black rounded-t-sm h-24" />
-                  <div className="w-5 bg-slate-600 rounded-t-sm h-36" />
-                </div>
-                <span className="text-[11px] font-medium text-slate-500">April</span>
-              </div>
-              <div className="flex flex-col items-center gap-1.5 flex-1 h-full justify-end">
-                <div className="flex items-end gap-1 w-full justify-center">
-                  <div className="w-5 bg-black rounded-t-sm h-20" />
-                  <div className="w-5 bg-slate-600 rounded-t-sm h-28" />
-                </div>
-                <span className="text-[11px] font-medium text-slate-500">May</span>
-              </div>
-              <div className="flex flex-col items-center gap-1.5 flex-1 h-full justify-end">
-                <div className="flex items-end gap-1 w-full justify-center">
-                  <div className="w-5 bg-black rounded-t-sm h-48" />
-                  <div className="w-5 bg-slate-600 rounded-t-sm h-36" />
-                </div>
-                <span className="text-[11px] font-medium text-slate-500">June</span>
-              </div>
-            </div>
-          </div>
-        </Card>
-
-        {/* Right Card: Topological Propagation Speed */}
-        <Card className="border border-slate-200/80 bg-white shadow-xs rounded-2xl p-6 flex flex-col justify-between">
-          <div className="flex items-center justify-between">
-            <div>
-              <span className="text-xs font-medium text-slate-500">Topological Propagation Speed</span>
-              <div className="flex items-center gap-2 mt-1">
-                <span className="text-2xl font-extrabold text-slate-900 tracking-tight">42.3 ms</span>
-                <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200/60">
-                  +2.5% faster
-                </span>
-              </div>
-            </div>
-
-            <Button variant="outline" size="sm" className="h-8 text-xs font-semibold border-slate-200">
-              <ExportIcon className="mr-1.5 h-3.5 w-3.5 text-slate-500" />
-              Export Logs
+    <div className="space-y-6">
+      <PageHeader
+        title={`Good to see you, ${user?.firstName ?? 'there'}`}
+        description={
+          orgDetails
+            ? `${orgDetails.name} · ${orgDetails._count?.members ?? 0} members · ${orgDetails._count?.programs ?? 0} programs`
+            : 'Your event operations at a glance.'
+        }
+        actions={
+          <Can action="program.create">
+            <Button asChild>
+              <Link href="/programs?create=1">
+                <Plus className="h-4 w-4" aria-hidden="true" />
+                New program
+              </Link>
             </Button>
-          </div>
+          </Can>
+        }
+      />
 
-          {/* Line Chart Visual Component */}
-          <div className="mt-8 pt-4">
-            <svg viewBox="0 0 500 160" className="w-full h-44 overflow-visible">
-              <line x1="0" y1="140" x2="500" y2="140" stroke="#f1f5f9" strokeWidth="1" />
-              <line x1="0" y1="90" x2="500" y2="90" stroke="#f1f5f9" strokeWidth="1" />
-              <line x1="0" y1="40" x2="500" y2="40" stroke="#f1f5f9" strokeWidth="1" />
-
-              <path
-                d="M 10 120 Q 70 100 130 115 T 250 120 T 370 110 T 490 80"
-                fill="none"
-                stroke="#cbd5e1"
-                strokeWidth="2.5"
+      {programsError ? (
+        <ErrorState message={programsError} onRetry={() => void dispatch(fetchPrograms())} />
+      ) : isEmptyOrg ? (
+        <EmptyState
+          icon={CalendarRange}
+          title="No programs yet"
+          description="A program is the root of your event hierarchy. Create your first one to start building the schedule."
+          action={
+            <Can
+              action="program.create"
+              fallback={
+                <p className="text-xs text-muted-foreground">
+                  Ask an organization admin to create the first program.
+                </p>
+              }
+            >
+              <Button asChild>
+                <Link href="/programs?create=1">
+                  <Plus className="h-4 w-4" aria-hidden="true" />
+                  Create your first program
+                </Link>
+              </Button>
+            </Can>
+          }
+        />
+      ) : (
+        <>
+          {isLoading && !programs.length ? (
+            <SkeletonCards />
+          ) : (
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <StatCard
+                label="Live now"
+                value={stats.live.length}
+                caption={
+                  stats.live.length
+                    ? stats.live.map((program) => program.name).join(', ')
+                    : 'Nothing running right now'
+                }
+                icon={Radio}
+                tone={stats.live.length ? 'danger' : 'default'}
+                href={stats.live.length ? `/programs/${stats.live[0].id}/live` : undefined}
+                linkLabel="Open live mode"
               />
-              <path
-                d="M 10 110 Q 70 80 130 50 T 250 30 T 370 70 T 490 10"
-                fill="none"
-                stroke="#0f172a"
-                strokeWidth="2.5"
+              <StatCard
+                label="Active programs"
+                value={stats.active.length}
+                caption={`${stats.drafts.length} still in draft`}
+                icon={CalendarRange}
+                tone="primary"
+                href="/programs"
+                linkLabel="View programs"
               />
-            </svg>
-
-            <div className="flex items-center justify-between text-[11px] font-medium text-slate-400 mt-2 px-1">
-              <span>February</span>
-              <span>March</span>
-              <span>April</span>
-              <span>May</span>
-              <span>June</span>
-              <span>July</span>
-              <span>August</span>
-              <span>October</span>
-              <span>December</span>
+              <StatCard
+                label="Open tasks"
+                value={stats.openTasks.length}
+                caption={`${stats.urgent.length} high or urgent`}
+                icon={ClipboardList}
+                tone={stats.urgent.length ? 'warning' : 'default'}
+                href={canReadTasks ? '/tasks' : undefined}
+                linkLabel="View tasks"
+              />
+              <StatCard
+                label="Overdue tasks"
+                value={stats.overdue.length}
+                caption={stats.overdue.length ? 'Past their deadline' : 'Nothing overdue'}
+                icon={stats.overdue.length ? AlertTriangle : CheckCircle2}
+                tone={stats.overdue.length ? 'danger' : 'success'}
+                href={canReadTasks ? '/tasks' : undefined}
+                linkLabel="Review"
+              />
             </div>
+          )}
+
+          <div className="grid gap-5 lg:grid-cols-3">
+            <section className="rounded-xl border border-border bg-card lg:col-span-2">
+              <header className="flex items-center justify-between border-b border-border px-5 py-3.5">
+                <h2 className="text-sm font-semibold text-foreground">Recent programs</h2>
+                <Link
+                  href="/programs"
+                  className="flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+                >
+                  View all <ArrowRight className="h-3 w-3" aria-hidden="true" />
+                </Link>
+              </header>
+
+              {isLoadingPrograms && !programs.length ? (
+                <SkeletonText lines={4} className="p-5" />
+              ) : recentPrograms.length === 0 ? (
+                <EmptyState
+                  icon={CalendarRange}
+                  title="No programs yet"
+                  description="Create a program to start scheduling."
+                  className="border-0 bg-transparent"
+                />
+              ) : (
+                <ul className="divide-y divide-border">
+                  {recentPrograms.map((program: Program) => (
+                    <li key={program.id}>
+                      <Link
+                        href={`/programs/${program.id}`}
+                        className="flex items-center justify-between gap-3 px-5 py-3.5 transition-colors hover:bg-muted/50"
+                      >
+                        <span className="min-w-0">
+                          <span className="block truncate text-sm font-medium text-foreground">
+                            {program.name}
+                          </span>
+                          <span className="mt-0.5 block truncate text-xs text-muted-foreground">
+                            Updated {formatRelativeTime(program.updatedAt)}
+                          </span>
+                        </span>
+                        <StatusBadge value={program.status} domain="program" />
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+
+            <section className="rounded-xl border border-border bg-card">
+              <header className="flex items-center justify-between border-b border-border px-5 py-3.5">
+                <h2 className="text-sm font-semibold text-foreground">Needs attention</h2>
+                {canReadTasks && (
+                  <Link
+                    href="/tasks"
+                    className="flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+                  >
+                    All tasks <ArrowRight className="h-3 w-3" aria-hidden="true" />
+                  </Link>
+                )}
+              </header>
+
+              {!canReadTasks ? (
+                <EmptyState
+                  icon={ClipboardList}
+                  title="Tasks are not visible to your role"
+                  className="border-0 bg-transparent"
+                />
+              ) : isLoadingTasks && !tasks.length ? (
+                <SkeletonText lines={4} className="p-5" />
+              ) : priorityTasks.length === 0 ? (
+                <EmptyState
+                  icon={CheckCircle2}
+                  title="Nothing outstanding"
+                  description="Every task is done or cancelled."
+                  className="border-0 bg-transparent"
+                />
+              ) : (
+                <ul className="divide-y divide-border">
+                  {priorityTasks.map((task: Task) => {
+                    const overdue =
+                      now && task.deadline && new Date(task.deadline).getTime() < now;
+                    return (
+                      <li key={task.id} className="px-5 py-3">
+                        <div className="flex items-start justify-between gap-2">
+                          <p className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
+                            {task.title}
+                          </p>
+                          <StatusBadge value={task.priority} domain="priority" />
+                        </div>
+                        <p className="mt-1 truncate text-xs text-muted-foreground">
+                          {task.node?.name ?? 'Unassigned node'}
+                          {task.deadline && (
+                            <span className={overdue ? 'text-destructive' : undefined}>
+                              {' · '}
+                              {overdue ? 'Overdue ' : 'Due '}
+                              {formatRelativeTime(task.deadline)}
+                            </span>
+                          )}
+                        </p>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </section>
           </div>
-        </Card>
-      </div>
+
+          <Can action="org.read">
+            <div className="grid gap-4 sm:grid-cols-3">
+              <StatCard
+                label="Members"
+                value={orgDetails?._count?.members ?? '—'}
+                icon={Users}
+                href="/organization/members"
+                linkLabel="Manage members"
+              />
+              <StatCard
+                label="Venues"
+                value={orgDetails?._count?.venues ?? '—'}
+                icon={Building2}
+                href="/venues"
+                linkLabel="Manage venues"
+              />
+              <StatCard
+                label="Completed programs"
+                value={stats.completed.length}
+                caption={
+                  stats.completed.length
+                    ? `Most recent ${formatDateTime(stats.completed[0]?.updatedAt)}`
+                    : 'None finished yet'
+                }
+                icon={Activity}
+              />
+            </div>
+          </Can>
+        </>
+      )}
+
+      <p className="sr-only">Signed in as {fullName(user)}</p>
     </div>
   );
 }

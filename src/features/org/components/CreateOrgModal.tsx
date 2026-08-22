@@ -2,73 +2,109 @@
 
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { createOrgSchema, CreateOrgInput } from '@/utils/validationSchemas';
 import {
   Dialog,
   DialogContent,
-  DialogHeader,
-  DialogTitle,
   DialogDescription,
   DialogFooter,
+  DialogHeader,
+  DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Building } from 'lucide-react';
+import { FormField } from '@/components/ui/form-field';
+import { Spinner } from '@/components/ui/states';
+import { createOrgSchema, type CreateOrgInput } from '@/utils/validationSchemas';
 
 interface CreateOrgModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  onSubmit: (data: CreateOrgInput) => Promise<void>;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSubmit: (values: CreateOrgInput) => Promise<void>;
 }
 
-export function CreateOrgModal({ isOpen, onClose, onSubmit }: CreateOrgModalProps) {
+export function CreateOrgModal({ open, onOpenChange, onSubmit }: CreateOrgModalProps) {
   const {
     register,
     handleSubmit,
     reset,
+    watch,
     formState: { errors, isSubmitting },
   } = useForm<CreateOrgInput>({
     resolver: zodResolver(createOrgSchema),
+    defaultValues: { name: '', code: '', logoUrl: '' },
   });
 
-  const handleFormSubmit = async (data: CreateOrgInput) => {
-    await onSubmit(data);
+  const code = watch('code');
+
+  const submit = async (values: CreateOrgInput) => {
+    await onSubmit(values);
     reset();
-    onClose();
   };
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-md">
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!isSubmitting) {
+          onOpenChange(next);
+          if (!next) reset();
+        }
+      }}
+    >
+      <DialogContent>
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Building className="h-5 w-5 text-indigo-600" />
-            Create New Institution Organization
-          </DialogTitle>
+          <DialogTitle>Create an organization</DialogTitle>
           <DialogDescription>
-            Establish an isolated multi-tenant organization context for your university, school, or college.
+            You&apos;ll become its Super Admin, with full control over programs, members and roles.
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit(handleFormSubmit)} className="space-y-4">
-          <div className="space-y-1">
-            <label className="text-xs font-semibold">Organization Name</label>
-            <Input {...register('name')} placeholder="e.g. Stanford University" />
-            {errors.name && <p className="text-xs text-red-500">{errors.name.message}</p>}
-          </div>
+        <form onSubmit={handleSubmit(submit)} className="space-y-4" noValidate>
+          <FormField label="Organization name" error={errors.name?.message} required>
+            {(field) => (
+              <Input {...field} {...register('name')} placeholder="Arka Jain University" autoFocus />
+            )}
+          </FormField>
 
-          <div className="space-y-1">
-            <label className="text-xs font-semibold">Unique Code / Prefix</label>
-            <Input {...register('code')} placeholder="e.g. STANFORD-ENG" />
-            {errors.code && <p className="text-xs text-red-500">{errors.code.message}</p>}
-          </div>
+          <FormField
+            label="Institution code"
+            error={errors.code?.message}
+            required
+            hint={
+              code
+                ? `Members will register with the code “${code.toLowerCase()}”.`
+                : 'A short, unique slug your members type when they sign up.'
+            }
+          >
+            {(field) => (
+              <Input
+                {...field}
+                {...register('code')}
+                placeholder="arkajain"
+                autoCapitalize="none"
+                autoCorrect="off"
+              />
+            )}
+          </FormField>
 
-          <DialogFooter className="pt-2">
-            <Button variant="outline" type="button" onClick={onClose}>
+          <FormField label="Logo URL" error={errors.logoUrl?.message} hint="Optional.">
+            {(field) => (
+              <Input {...field} {...register('logoUrl')} placeholder="https://example.com/logo.png" />
+            )}
+          </FormField>
+
+          <DialogFooter className="gap-2 sm:gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+              disabled={isSubmitting}
+            >
               Cancel
             </Button>
             <Button type="submit" disabled={isSubmitting}>
-              {isSubmitting ? 'Creating...' : 'Create Organization'}
+              {isSubmitting && <Spinner />}
+              {isSubmitting ? 'Creating…' : 'Create organization'}
             </Button>
           </DialogFooter>
         </form>

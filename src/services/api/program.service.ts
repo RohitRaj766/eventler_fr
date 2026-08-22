@@ -1,33 +1,31 @@
-import { axiosInstance } from './axiosInstance';
-import { CreateProgramInput } from '@/utils/validationSchemas';
-import { NodeStatus } from '@/types';
+import type { Program, ProgramStatus, ProgramTree } from '@/types';
+import { apiGet, apiPatch, apiPost } from './axiosInstance';
+
+export interface CreateProgramPayload {
+  name: string;
+  description?: string;
+  plannedStartTime: string;
+  plannedEndTime: string;
+}
 
 export const programService = {
-  async createProgram(data: CreateProgramInput) {
-    const response = await axiosInstance.post('/programs', data);
-    return response.data.data;
+  async list() {
+    return apiGet<Program[]>('/programs');
   },
 
-  async getOrgPrograms() {
-    const response = await axiosInstance.get('/programs');
-    return response.data.data;
+  async create(payload: CreateProgramPayload) {
+    return apiPost<Program>('/programs', payload);
   },
 
-  async getUserPrograms() {
-    return this.getOrgPrograms();
+  /**
+   * Returns the program plus `nodes` (flat) and `tree` (nested).
+   * Swagger documents `/programs/:id/tree`, which 404s — this is the real path.
+   */
+  async getTree(id: string) {
+    return apiGet<ProgramTree>(`/programs/${id}`);
   },
 
-  async getProgramTree(id: string) {
-    const response = await axiosInstance.get(`/programs/${id}`);
-    return response.data.data;
-  },
-
-  async getProgramById(id: string) {
-    return this.getProgramTree(id);
-  },
-
-  async updateProgramStatus(id: string, status: NodeStatus) {
-    const response = await axiosInstance.patch(`/programs/${id}/status`, { status });
-    return response.data.data;
+  async updateStatus(id: string, status: ProgramStatus) {
+    return apiPatch<Program>(`/programs/${id}/status`, { status });
   },
 };

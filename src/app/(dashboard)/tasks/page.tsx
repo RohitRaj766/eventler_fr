@@ -1,146 +1,347 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
+import { ClipboardList, Plus } from 'lucide-react';
 import { useAppDispatch, useAppSelector } from '@/app/hooks';
-import { fetchAllTasks, createTask, updateTask } from '@/features/task/taskSlice';
-import { TaskBoard } from '@/features/task/components/TaskBoard';
-import { CreateTaskModal } from '@/features/task/components/CreateTaskModal';
-import { TaskStatus } from '@/types';
-import { CreateTaskInput } from '@/utils/validationSchemas';
-import { programService } from '@/services/api';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { FolderTree, Calendar, Filter } from 'lucide-react';
+import { createTask, fetchOrgTasks, updateTask } from '@/features/task/taskSlice';
+import { fetchPrograms, fetchProgramTree } from '@/features/program/programSlice';
+import { fetchOrgMembers } from '@/features/org/orgSlice';
+import { selectTaskStatusOptions } from '@/features/meta/metaSlice';
+import { TaskFormModal, type TaskSubmitValues } from '@/features/task/components/TaskFormModal';
+import { RequirePermission } from '@/components/auth/RequirePermission';
+import { Can } from '@/components/auth/Can';
+import { PageHeader } from '@/components/ui/page-header';
+import { Button } from '@/components/ui/button';
+import { StatusBadge } from '@/components/ui/status-badge';
+import { DataTable, type DataTableColumn } from '@/components/ui/data-table';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { useToast } from '@/hooks/useToast';
+import { formatRelativeTime, fullName, humanizeEnum, initialsOf } from '@/utils/formatters';
+import { flattenForest } from '@/utils/nodeTreeHelpers';
+import type { Task, TaskStatus } from '@/types';
 
+const ALL = '__all__';
+
+/**
+ * Org-wide task board.
+ *
+ * Status is editable inline because that is the change people make most, and
+ * each update carries the task's `version` so a concurrent edit is reported as
+ * a conflict rather than silently overwriting someone else's work.
+ */
 export default function TasksPage() {
   const dispatch = useAppDispatch();
-  const { allOrgTasks, isLoading } = useAppSelector((state) => state.task);
+  const toast = useToast();
 
-  const [programs, setPrograms] = useState<any[]>([]);
-  const [selectedProgramId, setSelectedProgramId] = useState<string | undefined>(undefined);
-  const [nodes, setNodes] = useState<any[]>([]);
-  const [selectedNodeId, setSelectedNodeId] = useState<string | undefined>(undefined);
-  const [taskModalOpen, setTaskModalOpen] = useState(false);
+  const { tasks, isLoading, error, isMutating } = useAppSelector((state) => state.task);
+  const { programs, tree } = useAppSelector((state) => state.program);
+  const members = useAppSelector((state) => state.org.members);
+  const statusOptions = useAppSelector(selectTaskStatusOptions);
+  const activeOrgId = useAppSelector((state) => state.auth.activeOrgId);
 
-  // 1. Fetch all user programs on mount
+  const [statusFilter, setStatusFilter] = useState<string>(ALL);
+  const [assigneeFilter, setAssigneeFilter] = useState<string>(ALL);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [selectedProgramId, setSelectedProgramId] = useState<string>('');
+
   useEffect(() => {
-    programService
-      .getUserPrograms()
-      .then((list) => {
-        if (Array.isArray(list) && list.length > 0) {
-          setPrograms(list);
-          setSelectedProgramId(list[0].id);
-        }
-      })
-      .catch((err) => console.error('Failed to load user programs:', err));
-  }, []);
+    void dispatch(fetchOrgTasks());
+    void dispatch(fetchPrograms());
+    if (!members.length) void dispatch(fetchOrgMembers());
+  }, [dispatch, activeOrgId, members.length]);
 
-  // 2. Fetch program nodes and all tasks when selectedProgramId changes
+  // The create dialog needs nodes, which only come with a program's tree.
   useEffect(() => {
-    dispatch(fetchAllTasks(selectedProgramId));
-
-    if (selectedProgramId) {
-      programService
-        .getProgramById(selectedProgramId)
-        .then((prog) => {
-          if (prog?.nodes && Array.isArray(prog.nodes)) {
-            setNodes(prog.nodes);
-            setSelectedNodeId(undefined); // All nodes view
-          }
-        })
-        .catch((err) => console.error('Failed to load program nodes:', err));
-    }
+    if (selectedProgramId) void dispatch(fetchProgramTree(selectedProgramId));
   }, [dispatch, selectedProgramId]);
 
-  const handleUpdateStatus = (taskId: string, status: TaskStatus, version?: number) => {
-    dispatch(updateTask({ id: taskId, updates: { status, version } }));
+  const nodes = useMemo(() => flattenForest(tree), [tree]);
+
+  const rows = useMemo(
+    () =>
+      tasks.filter((task) => {
+        if (statusFilter !== ALL && task.status !== statusFilter) return false;
+        if (
+          assigneeFilter !== ALL &&
+          !task.assignments?.some((assignment) => assignment.userId === assigneeFilter)
+        ) {
+          return false;
+        }
+        return true;
+      }),
+    [tasks, statusFilter, assigneeFilter],
+  );
+
+  const handleStatusChange = async (task: Task, status: TaskStatus) => {
+    const result = await dispatch(
+      updateTask({ id: task.id, payload: { status, version: task.version } }),
+    );
+    if (updateTask.rejected.match(result)) {
+      const payload = result.payload as { taskId: string | null; message: string };
+      toast.error('Could not update the task', payload?.message);
+      // On a conflict our copy is stale — reload so the next edit succeeds.
+      if (payload?.taskId) void dispatch(fetchOrgTasks());
+      return;
+    }
+    toast.success('Task updated');
   };
 
-  const handleCreateTask = async (data: CreateTaskInput) => {
-    await dispatch(createTask(data));
-    dispatch(fetchAllTasks(selectedProgramId));
+  const handleCreate = async (values: TaskSubmitValues) => {
+    const result = await dispatch(
+      createTask({
+        nodeId: values.nodeId,
+        title: values.title,
+        description: values.description,
+        priority: values.priority,
+        deadline: values.deadline,
+        assigneeUserIds: values.assigneeUserIds,
+      }),
+    );
+    if (createTask.rejected.match(result)) {
+      toast.error('Could not create the task', result.payload as string);
+      return;
+    }
+    setCreateOpen(false);
+    toast.success('Task created');
+    void dispatch(fetchOrgTasks());
   };
 
-  // Filter tasks by selected node if specified
-  const filteredTasks = selectedNodeId
-    ? allOrgTasks.filter((t: any) => t.nodeId === selectedNodeId || t.node?.id === selectedNodeId)
-    : allOrgTasks;
+  const columns: DataTableColumn<Task>[] = [
+    {
+      id: 'title',
+      header: 'Task',
+      sortValue: (row) => row.title,
+      searchValue: (row) => `${row.title} ${row.description ?? ''} ${row.node?.name ?? ''}`,
+      cell: (row) => (
+        <div className="min-w-0">
+          <p className="truncate text-sm font-medium text-foreground">{row.title}</p>
+          {row.node && (
+            <p className="mt-0.5 truncate text-xs text-muted-foreground">
+              {row.node.programId ? (
+                <Link
+                  href={`/programs/${row.node.programId}`}
+                  className="hover:text-foreground hover:underline"
+                >
+                  {row.node.name}
+                </Link>
+              ) : (
+                row.node.name
+              )}
+            </p>
+          )}
+        </div>
+      ),
+    },
+    {
+      id: 'priority',
+      header: 'Priority',
+      sortValue: (row) => ({ URGENT: 0, HIGH: 1, MEDIUM: 2, LOW: 3 })[row.priority],
+      cell: (row) => <StatusBadge value={row.priority} domain="priority" />,
+    },
+    {
+      id: 'status',
+      header: 'Status',
+      sortValue: (row) => row.status,
+      cell: (row) => (
+        // Scope matters per row: a Volunteer holds task.update but may only
+        // reach tasks assigned to them, so unassigned rows stay read-only.
+        <Can
+          action="task.update"
+          subject={{ kind: 'task', task: row }}
+          fallback={<StatusBadge value={row.status} domain="task" />}
+        >
+          <Select
+            value={row.status}
+            onValueChange={(value) => void handleStatusChange(row, value as TaskStatus)}
+            disabled={isMutating}
+          >
+            <SelectTrigger
+              className="h-8 w-36"
+              aria-label={`Status of ${row.title}`}
+              onClick={(event) => event.stopPropagation()}
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {statusOptions.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {humanizeEnum(option.value)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Can>
+      ),
+    },
+    {
+      id: 'assignees',
+      header: 'Assignees',
+      hideOnMobile: true,
+      cell: (row) =>
+        row.assignments?.length ? (
+          <span className="flex -space-x-1.5">
+            {row.assignments.slice(0, 3).map((assignment) => (
+              <Avatar
+                key={assignment.id}
+                className="h-6 w-6 ring-2 ring-card"
+                title={fullName(assignment.user)}
+              >
+                <AvatarFallback className="bg-muted text-[10px] font-semibold">
+                  {initialsOf(assignment.user)}
+                </AvatarFallback>
+              </Avatar>
+            ))}
+            {row.assignments.length > 3 && (
+              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-muted text-[10px] font-semibold ring-2 ring-card">
+                +{row.assignments.length - 3}
+              </span>
+            )}
+          </span>
+        ) : (
+          <span className="text-sm text-muted-foreground">Unassigned</span>
+        ),
+    },
+    {
+      id: 'deadline',
+      header: 'Due',
+      hideOnMobile: true,
+      sortValue: (row) => row.deadline ?? '',
+      cell: (row) => {
+        if (!row.deadline) return <span className="text-sm text-muted-foreground">—</span>;
+        const overdue =
+          row.status !== 'COMPLETED' && new Date(row.deadline).getTime() < Date.now();
+        return (
+          <span
+            className={
+              overdue ? 'text-sm font-medium text-destructive' : 'text-sm text-muted-foreground'
+            }
+          >
+            {formatRelativeTime(row.deadline)}
+          </span>
+        );
+      },
+    },
+  ];
 
   return (
-    <div className="space-y-6">
-      {/* Header & Program/Node Selector Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-900 border border-slate-800 p-5 rounded-2xl">
-        <div className="space-y-1">
-          <h2 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
-            <FolderTree className="h-5 w-5 text-indigo-400" />
-            Node Task & Readiness Kanban Board
-          </h2>
-          <p className="text-xs text-slate-400 font-medium">
-            Ensure stage equipment, speakers, and venue resources are marked READY before starting node execution.
-          </p>
+    <RequirePermission action="task.read" title="tasks">
+      <div className="space-y-5">
+        <PageHeader
+          title="Tasks"
+          description="Everything that needs doing across this organization's events."
+          actions={
+            <Can action="task.create">
+              <Button onClick={() => setCreateOpen(true)} disabled={!programs.length}>
+                <Plus className="h-4 w-4" aria-hidden="true" />
+                New task
+              </Button>
+            </Can>
+          }
+        />
+
+        <div className="flex flex-wrap gap-3">
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="w-44" aria-label="Filter by status">
+              <SelectValue placeholder="All statuses" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL}>All statuses</SelectItem>
+              {statusOptions.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {humanizeEnum(option.value)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Select value={assigneeFilter} onValueChange={setAssigneeFilter}>
+            <SelectTrigger className="w-52" aria-label="Filter by assignee">
+              <SelectValue placeholder="Anyone" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL}>Anyone</SelectItem>
+              {members.map((member) => (
+                <SelectItem key={member.id} value={member.userId}>
+                  {fullName(member.user)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
-        {/* Dynamic Selectors */}
-        <div className="flex flex-wrap items-center gap-3 shrink-0">
-          {/* Program Select */}
-          {programs.length > 0 && (
-            <div className="flex items-center gap-1.5">
-              <Calendar className="h-4 w-4 text-indigo-400" />
-              <Select
-                value={selectedProgramId}
-                onValueChange={(val) => setSelectedProgramId(val)}
-              >
-                <SelectTrigger className="h-9 text-xs bg-slate-950 border-slate-800 text-white w-44">
-                  <SelectValue placeholder="Select Event Program" />
+        <DataTable
+          columns={columns}
+          rows={rows}
+          rowKey={(row) => row.id}
+          isLoading={isLoading}
+          error={error}
+          onRetry={() => void dispatch(fetchOrgTasks())}
+          searchPlaceholder="Search tasks…"
+          emptyIcon={ClipboardList}
+          emptyTitle={tasks.length ? 'No tasks match these filters' : 'No tasks yet'}
+          emptyDescription={
+            tasks.length
+              ? 'Try clearing a filter to see the rest.'
+              : 'Tasks attach to nodes in a program. Create one to start tracking what needs doing.'
+          }
+          emptyAction={
+            !tasks.length && programs.length ? (
+              <Can action="task.create">
+                <Button onClick={() => setCreateOpen(true)}>
+                  <Plus className="h-4 w-4" aria-hidden="true" />
+                  Create a task
+                </Button>
+              </Can>
+            ) : undefined
+          }
+          caption="Organization tasks"
+        />
+
+        {/* Node choices depend on which program is picked first. */}
+        {createOpen && !selectedProgramId && (
+          <div className="rounded-xl border border-border bg-card p-5">
+            <p className="text-sm font-medium text-foreground">Which program is this task for?</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Tasks attach to a node, so pick the program to load its nodes.
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Select value={selectedProgramId} onValueChange={setSelectedProgramId}>
+                <SelectTrigger className="w-64" aria-label="Choose a program">
+                  <SelectValue placeholder="Choose a program" />
                 </SelectTrigger>
-                <SelectContent className="bg-slate-900 border-slate-800 text-white">
-                  {programs.map((p) => (
-                    <SelectItem key={p.id} value={p.id}>
-                      {p.name}
+                <SelectContent>
+                  {programs.map((program) => (
+                    <SelectItem key={program.id} value={program.id}>
+                      {program.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+              <Button variant="ghost" onClick={() => setCreateOpen(false)}>
+                Cancel
+              </Button>
             </div>
-          )}
+          </div>
+        )}
 
-          {/* Node / Stage Select */}
-          {nodes.length > 0 && (
-            <div className="flex items-center gap-1.5">
-              <Filter className="h-4 w-4 text-slate-400" />
-              <Select
-                value={selectedNodeId || 'all'}
-                onValueChange={(val) => setSelectedNodeId(val === 'all' ? undefined : val)}
-              >
-                <SelectTrigger className="h-9 text-xs bg-slate-950 border-slate-800 text-white w-48">
-                  <SelectValue placeholder="All Program Sessions" />
-                </SelectTrigger>
-                <SelectContent className="bg-slate-900 border-slate-800 text-white">
-                  <SelectItem value="all">All Program Sessions ({nodes.length})</SelectItem>
-                  {nodes.map((n) => (
-                    <SelectItem key={n.id} value={n.id}>
-                      {n.name} ({n.type})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-        </div>
+        <TaskFormModal
+          open={createOpen && Boolean(selectedProgramId) && nodes.length > 0}
+          onOpenChange={(open) => {
+            setCreateOpen(open);
+            if (!open) setSelectedProgramId('');
+          }}
+          nodes={nodes}
+          onSubmit={handleCreate}
+        />
       </div>
-
-      <TaskBoard
-        tasks={filteredTasks}
-        onAddTask={() => setTaskModalOpen(true)}
-        onUpdateStatus={handleUpdateStatus}
-      />
-
-      <CreateTaskModal
-        isOpen={taskModalOpen}
-        onClose={() => setTaskModalOpen(false)}
-        nodeId={selectedNodeId || nodes[0]?.id}
-        nodes={nodes}
-        onSubmit={handleCreateTask}
-      />
-    </div>
+    </RequirePermission>
   );
 }

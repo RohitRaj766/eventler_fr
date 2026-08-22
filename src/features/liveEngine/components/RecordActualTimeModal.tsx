@@ -3,120 +3,167 @@
 import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { recordActualTimeSchema, RecordActualTimeInput } from '@/utils/validationSchemas';
-import { Node } from '@/types';
+import { useAppDispatch, useAppSelector } from '@/app/hooks';
+import { recordActualTime } from '@/features/liveEngine/liveEngineSlice';
 import {
   Dialog,
   DialogContent,
-  DialogHeader,
-  DialogTitle,
   DialogDescription,
   DialogFooter,
+  DialogHeader,
+  DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Radio } from 'lucide-react';
+import { Textarea } from '@/components/ui/textarea';
+import { FormField } from '@/components/ui/form-field';
+import { Spinner } from '@/components/ui/states';
+import { useToast } from '@/hooks/useToast';
+import {
+  formatDuration,
+  formatTimeOnly,
+  fromDateTimeLocalValue,
+  toDateTimeLocalValue,
+} from '@/utils/formatters';
+import { recordActualTimeSchema, type RecordActualTimeInput } from '@/utils/validationSchemas';
+import type { EventNode } from '@/types';
 
 interface RecordActualTimeModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  node: Node | null;
-  onSubmit: (data: RecordActualTimeInput) => Promise<void>;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  node: EventNode | null;
+  programId: string;
+  onRecorded: () => void;
 }
 
-export function RecordActualTimeModal({ isOpen, onClose, node, onSubmit }: RecordActualTimeModalProps) {
+/**
+ * Records what actually happened, which is what drives schedule propagation.
+ *
+ * The reason is mandatory server-side and lands in the audit trail, so the
+ * copy says why it is being asked for. The node's `version` is sent as
+ * `expectedVersion`: if someone else recorded a time first, the update is
+ * refused rather than silently overwriting their entry.
+ */
+export function RecordActualTimeModal({
+  open,
+  onOpenChange,
+  node,
+  programId,
+  onRecorded,
+}: RecordActualTimeModalProps) {
+  const dispatch = useAppDispatch();
+  const toast = useToast();
+  const isRecording = useAppSelector((state) => state.liveEngine.isRecording);
+
   const {
     register,
     handleSubmit,
-    setValue,
     reset,
-    formState: { errors, isSubmitting },
+    formState: { errors },
   } = useForm<RecordActualTimeInput>({
     resolver: zodResolver(recordActualTimeSchema),
+    defaultValues: { actualStartTime: '', actualEndTime: '', reason: '' },
   });
 
   useEffect(() => {
-    if (node) {
-      setValue('nodeId', node.id);
-      setValue(
-        'actualStartTime',
-        node.actualStartTime
-          ? new Date(node.actualStartTime).toISOString().slice(0, 16)
-          : new Date().toISOString().slice(0, 16)
-      );
-      if (node.actualEndTime) {
-        setValue('actualEndTime', new Date(node.actualEndTime).toISOString().slice(0, 16));
-      }
-    }
-  }, [node, setValue]);
+    if (!open || !node) return;
+    // Pre-fill the field the operator is most likely to need: the start if the
+    // node has not begun, otherwise "now" as the end.
+    const now = toDateTimeLocalValue(new Date());
+    reset({
+      actualStartTime: toDateTimeLocalValue(node.actualStartTime) || (node.actualStartTime ? '' : now),
+      actualEndTime: node.actualStartTime && !node.actualEndTime ? now : toDateTimeLocalValue(node.actualEndTime),
+      reason: '',
+    });
+  }, [open, node, reset]);
 
-  const handleFormSubmit = async (data: RecordActualTimeInput) => {
-    await onSubmit(data);
-    reset();
-    onClose();
+  const submit = async (values: RecordActualTimeInput) => {
+    if (!node) return;
+
+    const result = await dispatch(
+      recordActualTime({
+        programId,
+        nodeId: node.id,
+        actualStartTime: fromDateTimeLocalValue(values.actualStartTime),
+        actualEndTime: fromDateTimeLocalValue(values.actualEndTime),
+        reason: values.reason,
+        expectedVersion: node.version,
+      }),
+    );
+
+    if (recordActualTime.rejected.match(result)) {
+      toast.error('Could not record the time', result.payload as string);
+      return;
+    }
+
+    const { delayMinutes, affectedNodes } = result.payload;
+    toast.success(
+      delayMinutes > 0
+        ? `Recorded — running ${formatDuration(delayMinutes)} behind`
+        : 'Time recorded',
+      affectedNodes.length
+        ? `${affectedNodes.length} downstream ${affectedNodes.length === 1 ? 'node was' : 'nodes were'} rescheduled.`
+        : 'Nothing downstream needed to move.',
+    );
+
+    onRecorded();
+    onOpenChange(false);
   };
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-md bg-white border border-slate-200/80 shadow-2xl rounded-2xl p-6">
-        <DialogHeader className="space-y-1.5 pb-2 border-b border-slate-100">
-          <DialogTitle className="flex items-center gap-2 text-slate-900 font-bold text-lg">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600">
-              <Radio className="h-4 w-4 animate-pulse" />
-            </div>
-            Record Live Timestamp: {node?.name}
-          </DialogTitle>
-          <DialogDescription className="text-xs font-medium text-slate-500">
-            Log actual start/end timestamps. The topological propagation engine will recalculate all downstream node schedule impacts in real time.
+    <Dialog open={open} onOpenChange={(next) => !isRecording && onOpenChange(next)}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Record actual time</DialogTitle>
+          <DialogDescription>
+            {node ? (
+              <>
+                <span className="font-medium text-foreground">{node.name}</span> is scheduled for{' '}
+                {formatTimeOnly(node.projectedStartTime)} – {formatTimeOnly(node.projectedEndTime)}.
+                Recording a different time reschedules everything that depends on it.
+              </>
+            ) : null}
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit(handleFormSubmit)} className="space-y-4 pt-2">
-          <input type="hidden" {...register('nodeId')} />
-
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-slate-700">Actual Start Time</label>
-            <Input
-              {...register('actualStartTime')}
-              type="datetime-local"
-              className="h-10 text-xs bg-white border-slate-200 text-slate-900 focus-visible:ring-indigo-500"
-            />
+        <form onSubmit={handleSubmit(submit)} className="space-y-4" noValidate>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <FormField label="Actual start" error={errors.actualStartTime?.message}>
+              {(field) => <Input {...field} {...register('actualStartTime')} type="datetime-local" />}
+            </FormField>
+            <FormField label="Actual end" error={errors.actualEndTime?.message}>
+              {(field) => <Input {...field} {...register('actualEndTime')} type="datetime-local" />}
+            </FormField>
           </div>
 
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-slate-700">Actual End Time (Optional)</label>
-            <Input
-              {...register('actualEndTime')}
-              type="datetime-local"
-              className="h-10 text-xs bg-white border-slate-200 text-slate-900 focus-visible:ring-indigo-500"
-            />
-          </div>
+          <FormField
+            label="Reason"
+            error={errors.reason?.message}
+            required
+            hint="Recorded in the audit trail so the team can see why the schedule moved."
+          >
+            {(field) => (
+              <Textarea
+                {...field}
+                {...register('reason')}
+                rows={2}
+                placeholder="Guest speaker's Q&A ran 30 minutes over"
+              />
+            )}
+          </FormField>
 
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-slate-700">Reason for Live Update</label>
-            <Input
-              {...register('reason')}
-              placeholder="e.g. VIP Speaker delayed by 25 mins due to traffic"
-              className="h-10 text-xs bg-white border-slate-200 text-slate-900 placeholder:text-slate-400 focus-visible:ring-indigo-500"
-            />
-            {errors.reason && <p className="text-xs text-red-500 font-medium">{errors.reason.message}</p>}
-          </div>
-
-          <DialogFooter className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
+          <DialogFooter className="gap-2 sm:gap-2">
             <Button
-              variant="outline"
               type="button"
-              onClick={onClose}
-              className="h-9 text-xs font-semibold text-slate-700 border-slate-200 hover:bg-slate-50 rounded-lg"
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+              disabled={isRecording}
             >
               Cancel
             </Button>
-            <Button
-              type="submit"
-              disabled={isSubmitting}
-              className="h-9 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-sm"
-            >
-              {isSubmitting ? 'Propagating...' : 'Log & Recalculate'}
+            <Button type="submit" disabled={isRecording}>
+              {isRecording && <Spinner />}
+              {isRecording ? 'Propagating…' : 'Record & propagate'}
             </Button>
           </DialogFooter>
         </form>

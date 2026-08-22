@@ -1,14 +1,24 @@
-import { axiosInstance } from './axiosInstance';
-import { RecordActualTimeInput } from '@/utils/validationSchemas';
+import type { LivePropagationResult, ScheduleChange } from '@/types';
+import { apiGet, apiPost } from './axiosInstance';
+
+export interface RecordActualTimePayload {
+  programId: string;
+  nodeId: string;
+  actualStartTime?: string;
+  actualEndTime?: string;
+  /** Required — every timing override is written to the audit trail. */
+  reason: string;
+  /** Optimistic lock against the node's current `version`. */
+  expectedVersion: number;
+}
 
 export const liveEngineService = {
-  async recordActualTime(data: RecordActualTimeInput) {
-    const response = await axiosInstance.post('/live/actual-time', data);
-    return response.data.data;
+  /** Records a real timestamp and propagates the delta downstream. */
+  async recordActualTime(payload: RecordActualTimePayload) {
+    return apiPost<LivePropagationResult>('/live/actual-time', payload);
   },
 
   async getScheduleChanges(programId: string) {
-    const response = await axiosInstance.get(`/live/changes/${programId}`);
-    return response.data.data;
+    return apiGet<ScheduleChange[]>(`/live/changes/${programId}`);
   },
 };

@@ -1,36 +1,54 @@
-import { axiosInstance } from './axiosInstance';
-import { CreateNodeInput } from '@/utils/validationSchemas';
+import type { EventNode, NodeStatus, NodeTypeCategory } from '@/types';
+import { apiDelete, apiGet, apiPatch, apiPost } from './axiosInstance';
+
+export interface CreateNodePayload {
+  programId: string;
+  parentId?: string | null;
+  /** Backend field is `type`, not Swagger's `typeCategory`. */
+  type: NodeTypeCategory;
+  /** Backend field is `name`, not Swagger's `title`. */
+  name: string;
+  description?: string;
+  plannedStartTime: string;
+  plannedEndTime: string;
+  venueId?: string | null;
+  customTypeName?: string | null;
+  sortOrder?: number;
+}
+
+export interface UpdateNodePayload {
+  name?: string;
+  description?: string | null;
+  type?: NodeTypeCategory;
+  customTypeName?: string | null;
+  status?: NodeStatus;
+  plannedStartTime?: string;
+  plannedEndTime?: string;
+  venueId?: string | null;
+  sortOrder?: number;
+  /** Required by the backend for optimistic locking. */
+  version: number;
+}
 
 export const nodeService = {
-  async createNode(payload: { programId: string; parentId?: string; data: CreateNodeInput }) {
-    const response = await axiosInstance.post('/nodes', {
-      ...payload.data,
-      programId: payload.programId,
-      parentId: payload.parentId,
-    });
-    return response.data.data;
+  async create(payload: CreateNodePayload) {
+    return apiPost<EventNode>('/nodes', payload);
   },
 
-  async getNodeDetails(id: string) {
-    const response = await axiosInstance.get(`/nodes/${id}`);
-    return response.data.data;
+  async getById(id: string) {
+    return apiGet<EventNode>(`/nodes/${id}`);
   },
 
-  async updateNode(id: string, updates: Partial<CreateNodeInput>) {
-    const response = await axiosInstance.patch(`/nodes/${id}`, updates);
-    return response.data.data;
+  async update(id: string, payload: UpdateNodePayload) {
+    return apiPatch<EventNode>(`/nodes/${id}`, payload);
   },
 
-  async moveNode(id: string, newParentId?: string | null, newSortOrder?: number) {
-    const response = await axiosInstance.post(`/nodes/${id}/move`, {
-      newParentId: newParentId || null,
-      newSortOrder: typeof newSortOrder === 'number' ? newSortOrder : 0,
-    });
-    return response.data.data;
+  async remove(id: string) {
+    return apiDelete<null>(`/nodes/${id}`);
   },
 
-  async deleteNode(id: string) {
-    const response = await axiosInstance.delete(`/nodes/${id}`);
-    return response.data.data;
+  /** Swagger says PATCH; the deployed route is POST. */
+  async move(id: string, newParentId: string | null, newPosition: number) {
+    return apiPost<EventNode>(`/nodes/${id}/move`, { newParentId, newPosition });
   },
 };

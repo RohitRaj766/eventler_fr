@@ -1,23 +1,26 @@
-import { axiosInstance } from './axiosInstance';
+import { apiPost } from './axiosInstance';
+
+/** OTP send responses include `otpMock` while no mail/SMS transport is live. */
+export interface OtpDispatchResult {
+  message: string;
+  otpMock?: string;
+}
 
 export const verificationService = {
   async sendEmailOtp(email: string) {
-    const response = await axiosInstance.post('/verification/email/send-otp', { email });
-    return response.data.data;
+    return apiPost<OtpDispatchResult>('/verification/email/send-otp', { email });
   },
 
-  async verifyEmailOtp(email: string, code: string) {
-    const response = await axiosInstance.post('/verification/email/verify-otp', { email, code });
-    return response.data.data;
+  /** The field is `otp` — Swagger's `code` is rejected by the validator. */
+  async verifyEmailOtp(email: string, otp: string) {
+    return apiPost<null>('/verification/email/verify-otp', { email, otp });
   },
 
   async sendPhoneOtp(phoneNumber: string) {
-    const response = await axiosInstance.post('/verification/phone/send-otp', { phoneNumber });
-    return response.data.data;
+    return apiPost<OtpDispatchResult>('/verification/phone/send-otp', { phoneNumber });
   },
 
-  async verifyPhoneOtp(phoneNumber: string, code: string) {
-    const response = await axiosInstance.post('/verification/phone/verify-otp', { phoneNumber, code });
-    return response.data.data;
+  async verifyPhoneOtp(phoneNumber: string, otp: string) {
+    return apiPost<null>('/verification/phone/verify-otp', { phoneNumber, otp });
   },
 };

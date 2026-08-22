@@ -1,11 +1,13 @@
-import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
-import { roleService } from '@/services/api';
-import { Role, Permission } from '@/types';
+import { createAsyncThunk, createSlice } from '@reduxjs/toolkit';
+import { roleService, type CreateRolePayload } from '@/services/api';
+import { getErrorMessage } from '@/lib/apiError';
+import type { Permission, Role } from '@/types';
 
 interface RoleState {
   roles: Role[];
   permissions: Permission[];
   isLoading: boolean;
+  isMutating: boolean;
   error: string | null;
 }
 
@@ -13,58 +15,83 @@ const initialState: RoleState = {
   roles: [],
   permissions: [],
   isLoading: false,
+  isMutating: false,
   error: null,
 };
 
+/**
+ * `GET /roles` is not tenant-scoped server-side yet, so the active org id is
+ * required and the service filters the response before it reaches the store.
+ */
 export const fetchRoles = createAsyncThunk(
   'role/fetchRoles',
-  async (_, { rejectWithValue }) => {
+  async (organizationId: string | null, { rejectWithValue }) => {
     try {
-      return await roleService.getRoles();
-    } catch (err: any) {
-      return rejectWithValue(err.response?.data?.message || 'Failed to fetch roles');
+      return await roleService.listForOrg(organizationId);
+    } catch (error) {
+      return rejectWithValue(getErrorMessage(error));
     }
-  }
+  },
 );
 
 export const fetchPermissions = createAsyncThunk(
   'role/fetchPermissions',
-  async (_, { rejectWithValue }) => {
+  async (_: void, { rejectWithValue }) => {
     try {
-      return await roleService.getPermissions();
-    } catch (err: any) {
-      return rejectWithValue(err.response?.data?.message || 'Failed to fetch permissions');
+      return await roleService.listPermissions();
+    } catch (error) {
+      return rejectWithValue(getErrorMessage(error));
     }
-  }
+  },
 );
 
 export const createRole = createAsyncThunk(
-  'role/createRole',
-  async (data: { name: string; description?: string; category?: string; permissionIds: string[] }, { rejectWithValue }) => {
+  'role/create',
+  async (payload: CreateRolePayload, { rejectWithValue }) => {
     try {
-      return await roleService.createRole(data);
-    } catch (err: any) {
-      return rejectWithValue(err.response?.data?.message || 'Failed to create role');
+      return await roleService.create(payload);
+    } catch (error) {
+      return rejectWithValue(getErrorMessage(error));
     }
-  }
+  },
 );
 
 const roleSlice = createSlice({
   name: 'role',
   initialState,
-  reducers: {},
+  reducers: {
+    resetRoles: () => initialState,
+  },
   extraReducers: (builder) => {
     builder
+      .addCase(fetchRoles.pending, (state) => {
+        state.isLoading = true;
+        state.error = null;
+      })
       .addCase(fetchRoles.fulfilled, (state, action) => {
-        state.roles = action.payload || [];
+        state.isLoading = false;
+        state.roles = action.payload ?? [];
+      })
+      .addCase(fetchRoles.rejected, (state, action) => {
+        state.isLoading = false;
+        state.error = (action.payload as string) ?? 'Could not load roles';
       })
       .addCase(fetchPermissions.fulfilled, (state, action) => {
-        state.permissions = action.payload || [];
+        state.permissions = action.payload ?? [];
+      })
+      .addCase(createRole.pending, (state) => {
+        state.isMutating = true;
       })
       .addCase(createRole.fulfilled, (state, action) => {
+        state.isMutating = false;
         state.roles.push(action.payload);
+      })
+      .addCase(createRole.rejected, (state, action) => {
+        state.isMutating = false;
+        state.error = (action.payload as string) ?? 'Could not create the role';
       });
   },
 });
 
+export const { resetRoles } = roleSlice.actions;
 export default roleSlice.reducer;
