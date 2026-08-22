@@ -1,231 +1,264 @@
 'use client';
 
-import { useState } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { useEffect, useState } from 'react';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
+import { CheckCircle2, Copy, Info, UserPlus } from 'lucide-react';
+import { useAppDispatch, useAppSelector } from '@/app/hooks';
+import { fetchOrgMembers, inviteMember } from '@/features/org/orgSlice';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Mail, Shield, Copy, Check, Send, Calendar } from 'lucide-react';
-import { Role } from '@/types';
-import { organizationService } from '@/services/api';
+import { FormField } from '@/components/ui/form-field';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { InlineError, Spinner } from '@/components/ui/states';
+import { useToast } from '@/hooks/useToast';
+import type { InvitationResult } from '@/types';
 
-interface InviteMemberModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  orgCode: string;
-  roles: Role[];
-  programs?: any[];
-  onInviteSent?: (email: string, roleId: string) => void;
-}
+const inviteSchema = z.object({
+  email: z.string().trim().min(1, 'Email is required').email('Enter a valid email address'),
+  roleId: z.string().min(1, 'Choose a role'),
+});
 
+type InviteInput = z.infer<typeof inviteSchema>;
+
+/**
+ * Invites someone to the organization.
+ *
+ * The backend behaves in two quite different ways depending on whether the
+ * email already has an Eventler account, and the difference matters a lot to
+ * the admin — so the result screen says which one happened rather than showing
+ * one generic "invited!" message:
+ *
+ *  - existing account -> they are on the roster right now, nothing else to do;
+ *  - new email        -> a PENDING invitation is recorded, but no accept
+ *                        endpoint is deployed yet, so the person still has to
+ *                        register with the organization code. We show them the
+ *                        code so the admin can pass it on.
+ */
 export function InviteMemberModal({
-  isOpen,
-  onClose,
-  orgCode,
-  roles,
-  programs = [],
-  onInviteSent,
-}: InviteMemberModalProps) {
-  const [email, setEmail] = useState('');
-  const [selectedRoleId, setSelectedRoleId] = useState<string>('');
-  const [selectedProgramId, setSelectedProgramId] = useState<string>('');
-  const [copied, setCopied] = useState(false);
-  const [invitedLink, setInvitedLink] = useState<string | null>(null);
-  const [isExistingUser, setIsExistingUser] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  open,
+  onOpenChange,
+  organizationCode,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  organizationCode?: string;
+}) {
+  const dispatch = useAppDispatch();
+  const toast = useToast();
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!email) return;
-    setIsSubmitting(true);
+  const orgRoles = useAppSelector((state) => state.meta.orgRoles);
+  const isMutating = useAppSelector((state) => state.org.isMutating);
 
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<InvitationResult | null>(null);
+
+  const {
+    register,
+    handleSubmit,
+    watch,
+    setValue,
+    reset,
+    formState: { errors },
+  } = useForm<InviteInput>({
+    resolver: zodResolver(inviteSchema),
+    defaultValues: { email: '', roleId: '' },
+  });
+
+  const roleId = watch('roleId');
+
+  useEffect(() => {
+    if (!open) return;
+    setError(null);
+    setResult(null);
+    // Default to the baseline Member role when one exists.
+    const fallback = orgRoles.find((role) => /member/i.test(role.name)) ?? orgRoles[0];
+    reset({ email: '', roleId: fallback?.id ?? '' });
+  }, [open, orgRoles, reset]);
+
+  const onSubmit = async (values: InviteInput) => {
+    setError(null);
+    const action = await dispatch(inviteMember({ email: values.email, roleId: values.roleId }));
+
+    if (inviteMember.rejected.match(action)) {
+      setError(action.payload as string);
+      return;
+    }
+
+    setResult(action.payload);
+    if (action.payload.isExistingUser) {
+      // They joined immediately, so the roster is already stale.
+      void dispatch(fetchOrgMembers());
+      toast.success('Member added', `${values.email} now has access.`);
+    } else {
+      toast.success('Invitation recorded', `We saved an invitation for ${values.email}.`);
+    }
+  };
+
+  const copyCode = async () => {
+    if (!organizationCode) return;
     try {
-      const targetRoleId = selectedRoleId || roles[0]?.id;
-      const res = await organizationService.createInvitation({
-        email,
-        roleId: targetRoleId,
-        programId: selectedProgramId || undefined,
-      });
-
-      if (res?.isExistingUser) {
-        setIsExistingUser(true);
-        setInvitedLink('USER_LINKED');
-      } else {
-        setIsExistingUser(false);
-        const progQuery = selectedProgramId ? `&programId=${selectedProgramId}` : '';
-        const link = `${window.location.origin}/register?code=${orgCode}&email=${encodeURIComponent(email)}${progQuery}`;
-        setInvitedLink(link);
-      }
-
-      if (onInviteSent) {
-        onInviteSent(email, targetRoleId);
-      }
-    } catch (err) {
-      console.error('Failed to create invitation:', err);
-    } finally {
-      setIsSubmitting(false);
+      await navigator.clipboard.writeText(organizationCode);
+      toast.success('Code copied');
+    } catch {
+      toast.error('Could not copy', 'Select the code and copy it manually.');
     }
-  };
-
-  const handleCopyLink = () => {
-    if (invitedLink) {
-      navigator.clipboard.writeText(invitedLink);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }
-  };
-
-  const handleReset = () => {
-    setEmail('');
-    setInvitedLink(null);
-    setCopied(false);
-    onClose();
   };
 
   return (
-    <Dialog open={isOpen} onOpenChange={handleReset}>
-      <DialogContent className="bg-slate-900 border-slate-800 text-white max-w-md">
+    <Dialog open={open} onOpenChange={(next) => !isMutating && onOpenChange(next)}>
+      <DialogContent>
         <DialogHeader>
-          <DialogTitle className="text-base font-bold flex items-center gap-2 text-indigo-400">
-            <Mail className="h-4 w-4" /> Direct Member Email Invitation
-          </DialogTitle>
+          <DialogTitle>Invite someone</DialogTitle>
+          <DialogDescription>
+            You never set anyone&apos;s password — people always choose their own.
+          </DialogDescription>
         </DialogHeader>
 
-        {invitedLink ? (
-          <div className="space-y-4 py-2">
-            {isExistingUser ? (
-              <div className="p-4 bg-indigo-500/10 border border-indigo-500/30 rounded-xl text-indigo-300 text-xs space-y-1.5">
-                <p className="font-bold text-white flex items-center gap-1.5">
-                  <Check className="h-4 w-4 text-emerald-400" /> Existing Account Linked Instantly!
-                </p>
-                <p>
-                  <span className="font-bold text-indigo-400">{email}</span> already has an account. They have been directly assigned to the event roster in the database!
-                </p>
+        {result ? (
+          <div className="space-y-4">
+            <div className="flex items-start gap-3 rounded-lg border border-border bg-muted/40 p-3.5">
+              <CheckCircle2
+                className="mt-0.5 h-4.5 w-4.5 shrink-0 text-emerald-600 dark:text-emerald-400"
+                aria-hidden="true"
+              />
+              <div className="min-w-0 text-sm">
+                {result.isExistingUser ? (
+                  <>
+                    <p className="font-semibold text-foreground">They already had an account</p>
+                    <p className="mt-1 text-muted-foreground">
+                      <span className="font-medium text-foreground">{result.invitation.email}</span>{' '}
+                      has been added to your organization as{' '}
+                      <span className="font-medium text-foreground">
+                        {result.invitation.role?.name}
+                      </span>
+                      . They&apos;ll see it in their organization switcher next time they sign in —
+                      nothing else needed.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="font-semibold text-foreground">Invitation saved</p>
+                    <p className="mt-1 text-muted-foreground">
+                      No account exists for{' '}
+                      <span className="font-medium text-foreground">{result.invitation.email}</span>{' '}
+                      yet, so we recorded a pending invitation.
+                    </p>
+                  </>
+                )}
               </div>
-            ) : (
-              <>
-                <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-emerald-400 text-xs">
-                  ✓ Invitation link created for <span className="font-bold">{email}</span>!
-                </div>
+            </div>
 
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-bold uppercase text-slate-400">Personalized Invitation Link</label>
-                  <div className="flex items-center gap-2 bg-slate-950 p-2 rounded-xl border border-slate-800">
-                    <input
-                      type="text"
-                      readOnly
-                      value={invitedLink}
-                      className="bg-transparent text-xs text-indigo-300 font-mono flex-1 focus:outline-none truncate"
-                    />
-                    <Button
-                      type="button"
-                      size="sm"
-                      onClick={handleCopyLink}
-                      className="h-7 text-xs bg-indigo-600 hover:bg-indigo-700 text-white shrink-0"
-                    >
-                      {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-                      <span>{copied ? 'Copied' : 'Copy'}</span>
+            {!result.isExistingUser && (
+              <div className="rounded-lg border border-amber-300 bg-amber-50 p-3.5 text-sm dark:border-amber-700 dark:bg-amber-950/40">
+                <p className="font-semibold text-amber-900 dark:text-amber-200">
+                  They still need your organization code to sign up
+                </p>
+                <p className="mt-1 leading-relaxed text-amber-900 dark:text-amber-200">
+                  This server has no endpoint for accepting an invitation link yet, so the pending
+                  invitation on its own won&apos;t let them in. Ask them to register at{' '}
+                  <span className="font-medium">/register</span> with this code — they choose their
+                  own password there:
+                </p>
+
+                {organizationCode && (
+                  <div className="mt-2.5 flex items-center gap-2">
+                    <code className="flex-1 truncate rounded bg-black/5 px-2 py-1.5 font-mono text-sm font-semibold text-amber-900 dark:bg-white/10 dark:text-amber-100">
+                      {organizationCode}
+                    </code>
+                    <Button variant="outline" size="sm" onClick={copyCode}>
+                      <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+                      Copy
                     </Button>
                   </div>
-                </div>
-
-                <p className="text-[11px] text-slate-400">
-                  Share this link with {email}. When they open it, the institution code will be automatically populated!
-                </p>
-              </>
+                )}
+              </div>
             )}
 
-            <DialogFooter className="pt-2">
-              <Button
-                type="button"
-                onClick={() => {
-                  setInvitedLink(null);
-                  setEmail('');
-                }}
-                variant="outline"
-                className="border-slate-700 bg-slate-800 text-white text-xs hover:bg-slate-700"
-              >
-                Invite Another
+            <DialogFooter className="gap-2 sm:gap-2">
+              <Button variant="outline" onClick={() => setResult(null)}>
+                Invite someone else
               </Button>
-              <Button
-                type="button"
-                onClick={handleReset}
-                className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold"
-              >
-                Done
-              </Button>
+              <Button onClick={() => onOpenChange(false)}>Done</Button>
             </DialogFooter>
           </div>
         ) : (
-          <form onSubmit={handleSubmit} className="space-y-4 py-2">
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
-                <Mail className="h-3.5 w-3.5 text-indigo-400" /> Member Email Address
-              </label>
-              <Input
-                type="email"
-                required
-                placeholder="e.g. coordinator@nsu.ac.in"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="bg-slate-950 border-slate-800 text-xs text-white placeholder:text-slate-500"
-              />
-            </div>
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
+            {error && <InlineError message={error} />}
 
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
-                <Calendar className="h-3.5 w-3.5 text-indigo-400" /> Target Event Program (Optional)
-              </label>
-              <select
-                value={selectedProgramId}
-                onChange={(e) => setSelectedProgramId(e.target.value)}
-                className="w-full h-9 px-3 text-xs bg-slate-950 border border-slate-800 rounded-lg text-white focus:outline-none focus:border-indigo-500"
-              >
-                <option value="">All Institution Events (General Member)</option>
-                {programs.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
-            </div>
+            <FormField label="Email address" error={errors.email?.message} required>
+              {(field) => (
+                <Input
+                  {...field}
+                  {...register('email')}
+                  type="email"
+                  placeholder="colleague@institution.edu"
+                  autoFocus
+                />
+              )}
+            </FormField>
 
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
-                <Shield className="h-3.5 w-3.5 text-indigo-400" /> Assign Role
-              </label>
-              <select
-                value={selectedRoleId}
-                onChange={(e) => setSelectedRoleId(e.target.value)}
-                className="w-full h-9 px-3 text-xs bg-slate-950 border border-slate-800 rounded-lg text-white focus:outline-none focus:border-indigo-500"
-              >
-                <option value="">Select Role (Default: Member / Student)</option>
-                {roles.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.name}
-                  </option>
-                ))}
-              </select>
-            </div>
+            <FormField
+              label="Role"
+              error={errors.roleId?.message}
+              required
+              hint="What they'll be able to do once they're in."
+            >
+              {(field) => (
+                <Select
+                  value={roleId}
+                  onValueChange={(value) => setValue('roleId', value, { shouldValidate: true })}
+                  disabled={!orgRoles.length}
+                >
+                  <SelectTrigger id={field.id}>
+                    <SelectValue placeholder="Choose a role" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {orgRoles.map((role) => (
+                      <SelectItem key={role.id} value={role.id}>
+                        {role.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </FormField>
 
-            <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 text-[11px] text-slate-400 space-y-1">
-              <p className="font-semibold text-indigo-400">Institution Invite Code: {orgCode}</p>
-              <p>Generates an instant invitation link mapped to your university organization context.</p>
-            </div>
+            <p className="flex items-start gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2.5 text-xs text-muted-foreground">
+              <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+              <span>
+                If this person already has an Eventler account they join immediately. If not,
+                we&apos;ll record the invitation and show you the code they need to sign up with.
+              </span>
+            </p>
 
-            <DialogFooter className="pt-2">
+            <DialogFooter className="gap-2 sm:gap-2">
               <Button
                 type="button"
                 variant="outline"
-                onClick={onClose}
-                className="border-slate-700 bg-slate-800 text-white text-xs hover:bg-slate-700"
+                onClick={() => onOpenChange(false)}
+                disabled={isMutating}
               >
                 Cancel
               </Button>
-              <Button
-                type="submit"
-                className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center gap-1.5"
-              >
-                <Send className="h-3.5 w-3.5" /> Generate Invitation
+              <Button type="submit" disabled={isMutating || !orgRoles.length}>
+                {isMutating ? <Spinner /> : <UserPlus className="h-4 w-4" aria-hidden="true" />}
+                {isMutating ? 'Inviting…' : 'Send invitation'}
               </Button>
             </DialogFooter>
           </form>

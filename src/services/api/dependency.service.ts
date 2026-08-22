@@ -1,14 +1,20 @@
-import { axiosInstance } from './axiosInstance';
-import { CreateDependencyInput } from '@/utils/validationSchemas';
+import type { DependencyType, NodeDependency } from '@/types';
+import { apiDelete, apiPost } from './axiosInstance';
+
+export interface CreateDependencyPayload {
+  predecessorId: string;
+  successorId: string;
+  type?: DependencyType;
+  lagMinutes?: number;
+}
 
 export const dependencyService = {
-  async createDependency(data: CreateDependencyInput) {
-    const response = await axiosInstance.post('/dependencies', data);
-    return response.data.data;
+  /** Rejected with 400 if the edge would close a cycle (backend runs DFS). */
+  async create(payload: CreateDependencyPayload) {
+    return apiPost<NodeDependency>('/dependencies', payload);
   },
 
-  async removeDependency(predecessorId: string, successorId: string) {
-    const response = await axiosInstance.delete(`/dependencies/${predecessorId}/${successorId}`);
-    return response.data.data;
+  async remove(predecessorId: string, successorId: string) {
+    return apiDelete<null>(`/dependencies/${predecessorId}/${successorId}`);
   },
 };

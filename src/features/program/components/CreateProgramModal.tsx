@@ -2,26 +2,47 @@
 
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { createProgramSchema, CreateProgramInput } from '@/utils/validationSchemas';
 import {
   Dialog,
   DialogContent,
-  DialogHeader,
-  DialogTitle,
   DialogDescription,
   DialogFooter,
+  DialogHeader,
+  DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { FolderTree } from 'lucide-react';
+import { Textarea } from '@/components/ui/textarea';
+import { FormField } from '@/components/ui/form-field';
+import { Spinner } from '@/components/ui/states';
+import { createProgramSchema, type CreateProgramInput } from '@/utils/validationSchemas';
+import { fromDateTimeLocalValue, toDateTimeLocalValue } from '@/utils/formatters';
 
 interface CreateProgramModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  onSubmit: (data: CreateProgramInput) => Promise<void>;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSubmit: (values: {
+    name: string;
+    description?: string;
+    plannedStartTime: string;
+    plannedEndTime: string;
+  }) => Promise<void>;
 }
 
-export function CreateProgramModal({ isOpen, onClose, onSubmit }: CreateProgramModalProps) {
+/** Sensible default window: tomorrow, 9am to 6pm local. */
+function defaultWindow() {
+  const start = new Date();
+  start.setDate(start.getDate() + 1);
+  start.setHours(9, 0, 0, 0);
+  const end = new Date(start);
+  end.setHours(18, 0, 0, 0);
+  return {
+    plannedStartTime: toDateTimeLocalValue(start),
+    plannedEndTime: toDateTimeLocalValue(end),
+  };
+}
+
+export function CreateProgramModal({ open, onOpenChange, onSubmit }: CreateProgramModalProps) {
   const {
     register,
     handleSubmit,
@@ -29,94 +50,89 @@ export function CreateProgramModal({ isOpen, onClose, onSubmit }: CreateProgramM
     formState: { errors, isSubmitting },
   } = useForm<CreateProgramInput>({
     resolver: zodResolver(createProgramSchema),
-    defaultValues: {
-      plannedStartTime: new Date().toISOString().slice(0, 16),
-      plannedEndTime: new Date(Date.now() + 86400000).toISOString().slice(0, 16),
-    },
+    defaultValues: { name: '', description: '', ...defaultWindow() },
   });
 
-  const handleFormSubmit = async (data: CreateProgramInput) => {
-    await onSubmit(data);
-    reset();
-    onClose();
+  const submit = async (values: CreateProgramInput) => {
+    await onSubmit({
+      name: values.name,
+      description: values.description || undefined,
+      plannedStartTime: fromDateTimeLocalValue(values.plannedStartTime)!,
+      plannedEndTime: fromDateTimeLocalValue(values.plannedEndTime)!,
+    });
+    reset({ name: '', description: '', ...defaultWindow() });
   };
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-md bg-white border border-slate-200/80 shadow-2xl rounded-2xl p-6">
-        <DialogHeader className="space-y-1.5 pb-2 border-b border-slate-100">
-          <DialogTitle className="flex items-center gap-2 text-slate-900 font-bold text-lg">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600">
-              <FolderTree className="h-4 w-4" />
-            </div>
-            Create New Event Program
-          </DialogTitle>
-          <DialogDescription className="text-xs font-medium text-slate-500">
-            Create a new event (e.g. Technika 2026, Annual Convocation, Research Conference).
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!isSubmitting) onOpenChange(next);
+      }}
+    >
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Create a program</DialogTitle>
+          <DialogDescription>
+            A program is the root of an event hierarchy. You&apos;ll add activities, sessions and
+            rounds beneath it.
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit(handleFormSubmit)} className="space-y-4 pt-2">
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-slate-700">Event Title</label>
-            <Input
-              {...register('name')}
-              placeholder="e.g. Technika 2026"
-              className="h-10 text-xs bg-white border-slate-200 text-slate-900 placeholder:text-slate-400 focus-visible:ring-indigo-500"
-            />
-            {errors.name && <p className="text-xs text-red-500 font-medium">{errors.name.message}</p>}
-          </div>
-
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-slate-700">Description</label>
-            <Input
-              {...register('description')}
-              placeholder="Main annual engineering symposium & cultural fest"
-              className="h-10 text-xs bg-white border-slate-200 text-slate-900 placeholder:text-slate-400 focus-visible:ring-indigo-500"
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-slate-700">Planned Start Time</label>
+        <form onSubmit={handleSubmit(submit)} className="space-y-4" noValidate>
+          <FormField label="Program name" error={errors.name?.message} required>
+            {(field) => (
               <Input
-                {...register('plannedStartTime')}
-                type="datetime-local"
-                className="h-10 text-xs bg-white border-slate-200 text-slate-900 focus-visible:ring-indigo-500"
+                {...field}
+                {...register('name')}
+                placeholder="TECHNOVA 2027 Annual Fest"
+                autoFocus
               />
-              {errors.plannedStartTime && (
-                <p className="text-xs text-red-500 font-medium">{errors.plannedStartTime.message}</p>
-              )}
-            </div>
+            )}
+          </FormField>
 
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-slate-700">Planned End Time</label>
-              <Input
-                {...register('plannedEndTime')}
-                type="datetime-local"
-                className="h-10 text-xs bg-white border-slate-200 text-slate-900 focus-visible:ring-indigo-500"
+          <FormField label="Description" error={errors.description?.message}>
+            {(field) => (
+              <Textarea
+                {...field}
+                {...register('description')}
+                rows={3}
+                placeholder="3-day annual technical symposium"
               />
-              {errors.plannedEndTime && (
-                <p className="text-xs text-red-500 font-medium">{errors.plannedEndTime.message}</p>
+            )}
+          </FormField>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <FormField label="Planned start" error={errors.plannedStartTime?.message} required>
+              {(field) => (
+                <Input {...field} {...register('plannedStartTime')} type="datetime-local" />
               )}
-            </div>
+            </FormField>
+            <FormField label="Planned end" error={errors.plannedEndTime?.message} required>
+              {(field) => (
+                <Input {...field} {...register('plannedEndTime')} type="datetime-local" />
+              )}
+            </FormField>
           </div>
 
-          <DialogFooter className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
+          <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+            Note: this server creates the root node with a default 8-hour window rather than the
+            dates above. Adjust the root node&apos;s timing in the program workspace after
+            creating it.
+          </p>
+
+          <DialogFooter className="gap-2 sm:gap-2">
             <Button
-              variant="outline"
               type="button"
-              onClick={onClose}
-              className="h-9 text-xs font-semibold text-slate-700 border-slate-200 hover:bg-slate-50 rounded-lg"
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+              disabled={isSubmitting}
             >
               Cancel
             </Button>
-            <Button
-              type="submit"
-              disabled={isSubmitting}
-              className="h-9 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-sm"
-            >
-              {isSubmitting ? 'Creating Event...' : 'Create Event'}
+            <Button type="submit" disabled={isSubmitting}>
+              {isSubmitting && <Spinner />}
+              {isSubmitting ? 'Creating…' : 'Create program'}
             </Button>
           </DialogFooter>
         </form>

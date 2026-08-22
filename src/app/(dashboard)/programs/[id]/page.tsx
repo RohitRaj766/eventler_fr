@@ -1,392 +1,387 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
+import { useParams } from 'next/navigation';
+import { ArrowLeft, PanelRightClose, Radio } from 'lucide-react';
 import { useAppDispatch, useAppSelector } from '@/app/hooks';
-import { fetchProgramTree, updateTreeRealtime, createProgram, updateProgramStatus } from '@/features/program/programSlice';
-import { fetchMyOrganizations, createOrganization } from '@/features/org/orgSlice';
+import { fetchProgramTree, selectNode } from '@/features/program/programSlice';
 import { createNode, deleteNode, moveNode, updateNode } from '@/features/node/nodeSlice';
-import { recordActualTime } from '@/features/liveEngine/liveEngineSlice';
-import { createDependency } from '@/features/dependency/dependencySlice';
-import { socketService } from '@/services/socket';
-import { getApiActiveOrgId, programService } from '@/services/api';
-import { Node } from '@/types';
+import { createTask, fetchTasksByNode } from '@/features/task/taskSlice';
+import { fetchOrgMembers } from '@/features/org/orgSlice';
 import { NodeTreeContainer } from '@/features/node/components/NodeTreeContainer';
-import { CreateNodeModal } from '@/features/node/components/CreateNodeModal';
-import { RecordActualTimeModal } from '@/features/liveEngine/components/RecordActualTimeModal';
+import { NodeInspector } from '@/features/node/components/NodeInspector';
+import { NodeForm, type NodeFormValues } from '@/features/node/components/NodeForm';
 import { CreateDependencyModal } from '@/features/dependency/components/CreateDependencyModal';
-import { MoveNodeModal } from '@/features/node/components/MoveNodeModal';
-import { EditNodeModal } from '@/features/node/components/EditNodeModal';
-import { CreateProgramModal } from '@/features/program/components/CreateProgramModal';
-import { AsyncEnumSelect } from '@/components/ui/AsyncEnumSelect';
-import { PROGRAM_STATUS_OPTIONS, fetchBackendProgramStatusOptions, EnumOption } from '@/constants/enums';
-import { ProgramStatus } from '@/types';
-import { CreateNodeInput, RecordActualTimeInput, CreateDependencyInput, CreateProgramInput } from '@/utils/validationSchemas';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { TaskFormModal, type TaskSubmitValues } from '@/features/task/components/TaskFormModal';
+import { RecordActualTimeModal } from '@/features/liveEngine/components/RecordActualTimeModal';
+import { ProgramStatusControl } from '@/features/program/components/ProgramStatusControl';
+import { RequirePermission } from '@/components/auth/RequirePermission';
+import { Can } from '@/components/auth/Can';
+import { PageHeader } from '@/components/ui/page-header';
 import { Button } from '@/components/ui/button';
-import { Calendar, Plus, ArrowLeft, ExternalLink } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { formatDate } from '@/utils/formatters';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { ErrorState, LoadingState } from '@/components/ui/states';
+import { useToast } from '@/hooks/useToast';
+import { useRealtimeChannel, roomFor } from '@/hooks/useRealtime';
+import { flattenForest, findNodeInForest } from '@/utils/nodeTreeHelpers';
+import type { EventNode } from '@/types';
 
-export default function ProgramTreePage() {
-  const params = useParams();
-  const router = useRouter();
-  const programId = (params?.id as string) || 'root';
+type DialogState =
+  | { kind: 'none' }
+  | { kind: 'create'; parent: EventNode }
+  | { kind: 'edit'; node: EventNode }
+  | { kind: 'delete'; node: EventNode }
+  | { kind: 'dependency'; node: EventNode }
+  | { kind: 'task'; node: EventNode }
+  | { kind: 'time'; node: EventNode };
+
+/**
+ * The program workspace — the app's central screen.
+ *
+ * Three panels on desktop: the tree on the left, the selected node's detail in
+ * the middle, and its tasks and dependencies alongside. Below `lg` the detail
+ * panel becomes a sheet, so the tree keeps the full width instead of both
+ * panels being squeezed into an unusable column.
+ */
+export default function ProgramWorkspacePage() {
+  const params = useParams<{ id: string }>();
+  const programId = params?.id ?? '';
   const dispatch = useAppDispatch();
-  const { activeProgramTree } = useAppSelector((state) => state.program);
+  const toast = useToast();
 
-  const [allPrograms, setAllPrograms] = useState<any[]>([]);
-  const [statusOptions, setStatusOptions] = useState<EnumOption<ProgramStatus>[]>(PROGRAM_STATUS_OPTIONS);
+  const { current, tree, selectedNodeId, isLoadingTree, treeError } = useAppSelector(
+    (state) => state.program,
+  );
+  const members = useAppSelector((state) => state.org.members);
 
-  useEffect(() => {
-    fetchBackendProgramStatusOptions().then(setStatusOptions);
-  }, []);
-  const [createProgramModalOpen, setCreateProgramModalOpen] = useState(false);
-  const [createModalOpen, setCreateModalOpen] = useState(false);
-  const [selectedParentNode, setSelectedParentNode] = useState<Node | null>(null);
+  const [dialog, setDialog] = useState<DialogState>({ kind: 'none' });
+  const [mobileInspectorOpen, setMobileInspectorOpen] = useState(false);
 
-  const [actualTimeModalOpen, setActualTimeModalOpen] = useState(false);
-  const [targetTimeNode, setTargetTimeNode] = useState<Node | null>(null);
-
-  const [depModalOpen, setDepModalOpen] = useState(false);
-  const [predecessorNode, setPredecessorNode] = useState<Node | null>(null);
+  const refresh = useCallback(() => {
+    if (programId) void dispatch(fetchProgramTree(programId));
+  }, [dispatch, programId]);
 
   useEffect(() => {
-    dispatch(fetchMyOrganizations());
+    refresh();
+  }, [refresh]);
 
-    programService
-      .getOrgPrograms()
-      .then((progs) => {
-        setAllPrograms(progs || []);
-      })
-      .catch(console.error);
+  // Assignee pickers need the member roster.
+  useEffect(() => {
+    if (!members.length) void dispatch(fetchOrgMembers());
+  }, [dispatch, members.length]);
 
-    if (programId && programId !== 'root') {
-      dispatch(fetchProgramTree(programId));
-      socketService.connect();
-      socketService.joinProgramRoom(programId);
+  // Keeps the tree current: realtime when the socket delivers, polling otherwise.
+  useRealtimeChannel({
+    room: programId ? roomFor.program(programId) : null,
+    refresh,
+    intervalMs: 45_000,
+    enabled: Boolean(programId),
+  });
 
-      socketService.onTimelineUpdated((payload) => {
-        if (payload?.tree) {
-          dispatch(updateTreeRealtime(payload.tree));
-        }
-      });
+  const selectedNode = useMemo(
+    () => (selectedNodeId ? findNodeInForest(tree, selectedNodeId) : null),
+    [tree, selectedNodeId],
+  );
 
-      return () => {
-        socketService.leaveProgramRoom(programId);
-      };
-    }
-  }, [dispatch, programId, router]);
+  const allNodes = useMemo(() => flattenForest(tree), [tree]);
 
-  const handleAddChild = (node: Node) => {
-    setSelectedParentNode(node);
-    setCreateModalOpen(true);
+  const handleSelect = (nodeId: string) => {
+    dispatch(selectNode(nodeId));
+    setMobileInspectorOpen(true);
   };
 
-  const handleRecordTime = (node: Node) => {
-    setTargetTimeNode(node);
-    setActualTimeModalOpen(true);
-  };
-
-  const handleAddDependency = (node: Node) => {
-    setPredecessorNode(node);
-    setDepModalOpen(true);
-  };
-
-  const handleCreateProgramSubmit = async (data: CreateProgramInput) => {
-    try {
-      let currentOrgId = getApiActiveOrgId();
-      if (!currentOrgId) {
-        const orgs = await dispatch(fetchMyOrganizations()).unwrap();
-        if (!orgs || orgs.length === 0) {
-          const newOrg = await dispatch(
-            createOrganization({ name: 'Default Institution Org', code: 'DEFAULT-ORG' })
-          ).unwrap();
-          currentOrgId = newOrg?.id;
-        } else {
-          currentOrgId = orgs[0].id;
-        }
-      }
-
-      const newProg = await dispatch(createProgram(data)).unwrap();
-      if (newProg?.id) {
-        setAllPrograms((prev) => [newProg, ...prev]);
-        router.push(`/programs/${newProg.id}`);
-      }
-    } catch (err: any) {
-      console.error('Failed to create program:', err);
-    }
-  };
-
-  const getTargetProgramId = () => {
-    if (programId && programId !== 'root') return programId;
-    return activeProgramTree?.programId || (activeProgramTree as any)?.id || 'root';
-  };
-
-  const handleCreateNodeSubmit = async (data: CreateNodeInput) => {
-    const targetProgId = getTargetProgramId();
-    await dispatch(
+  const handleCreateNode = async (parent: EventNode, values: NodeFormValues) => {
+    const result = await dispatch(
       createNode({
-        programId: targetProgId,
-        parentId: selectedParentNode?.id,
-        data,
-      })
+        programId,
+        parentId: parent.id,
+        type: values.type,
+        name: values.name,
+        description: values.description,
+        plannedStartTime: values.plannedStartTime,
+        plannedEndTime: values.plannedEndTime,
+        venueId: values.venueId ?? undefined,
+        customTypeName: values.customTypeName,
+      }),
     );
-    dispatch(fetchProgramTree(targetProgId));
-  };
-
-  const handleRecordTimeSubmit = async (data: RecordActualTimeInput) => {
-    const targetProgId = getTargetProgramId();
-    await dispatch(recordActualTime(data));
-    dispatch(fetchProgramTree(targetProgId));
-  };
-
-  const handleDependencySubmit = async (data: CreateDependencyInput) => {
-    const targetProgId = getTargetProgramId();
-    await dispatch(createDependency(data));
-    dispatch(fetchProgramTree(targetProgId));
-  };
-
-  const handleDeleteNode = async (node: Node) => {
-    if (confirm(`Are you sure you want to delete session/activity "${node.name}"?`)) {
-      const targetProgId = getTargetProgramId();
-      await dispatch(deleteNode(node.id));
-      dispatch(fetchProgramTree(targetProgId));
+    if (createNode.rejected.match(result)) {
+      toast.error('Could not add the node', result.payload as string);
+      return;
     }
+    setDialog({ kind: 'none' });
+    toast.success('Node added', `${values.name} is now under ${parent.name}.`);
   };
 
-  const [moveModalOpen, setMoveModalOpen] = useState(false);
-  const [targetMoveNode, setTargetMoveNode] = useState<Node | null>(null);
-
-  const handleMoveNode = (node: Node) => {
-    setTargetMoveNode(node);
-    setMoveModalOpen(true);
-  };
-
-  const handleMoveSubmit = async (newParentId: string | null, newSortOrder: number) => {
-    if (targetMoveNode) {
-      const targetProgId = getTargetProgramId();
-      await dispatch(moveNode({ id: targetMoveNode.id, newParentId, newSortOrder }));
-      dispatch(fetchProgramTree(targetProgId));
+  const handleUpdateNode = async (node: EventNode, values: NodeFormValues) => {
+    const result = await dispatch(
+      updateNode({
+        id: node.id,
+        payload: {
+          name: values.name,
+          description: values.description ?? null,
+          type: values.type,
+          customTypeName: values.customTypeName ?? null,
+          status: values.status,
+          plannedStartTime: values.plannedStartTime,
+          plannedEndTime: values.plannedEndTime,
+          venueId: values.venueId,
+          // Optimistic lock — a stale version is rejected, not overwritten.
+          version: node.version,
+        },
+      }),
+    );
+    if (updateNode.rejected.match(result)) {
+      toast.error('Could not save the node', result.payload as string);
+      // A version conflict means our copy is behind; pull the current tree.
+      if (/changed by someone else/i.test(String(result.payload))) refresh();
+      return;
     }
+    setDialog({ kind: 'none' });
+    toast.success('Node updated');
   };
 
-  const handleDropMove = async (draggedId: string, newParentId: string) => {
-    const targetProgId = getTargetProgramId();
-    await dispatch(moveNode({ id: draggedId, newParentId }));
-    dispatch(fetchProgramTree(targetProgId));
+  const handleDeleteNode = async (node: EventNode) => {
+    const result = await dispatch(deleteNode(node.id));
+    if (deleteNode.rejected.match(result)) {
+      toast.error('Could not delete the node', result.payload as string);
+      return;
+    }
+    toast.success('Node deleted', `${node.name} and everything beneath it was removed.`);
   };
 
-  const [editModalOpen, setEditModalOpen] = useState(false);
-  const [targetEditNode, setTargetEditNode] = useState<Node | null>(null);
-
-  const handleEditNode = (node: Node) => {
-    setTargetEditNode(node);
-    setEditModalOpen(true);
+  const handleMove = async (nodeId: string, newParentId: string | null, newPosition: number) => {
+    const result = await dispatch(moveNode({ id: nodeId, newParentId, newPosition }));
+    if (moveNode.rejected.match(result)) {
+      toast.error('Could not move the node', result.payload as string);
+      // The optimistic reshape in the reducer never ran, but the server may
+      // have partially applied — reload so the tree matches reality.
+      refresh();
+      return;
+    }
+    // Sibling order is recomputed server-side, so re-read rather than guess.
+    refresh();
   };
 
-  const handleEditSubmit = async (id: string, updates: any) => {
-    const targetProgId = getTargetProgramId();
-    await dispatch(updateNode({ id, updates }));
-    dispatch(fetchProgramTree(targetProgId));
+  const handleCreateTask = async (values: TaskSubmitValues) => {
+    const result = await dispatch(
+      createTask({
+        nodeId: values.nodeId,
+        title: values.title,
+        description: values.description,
+        priority: values.priority,
+        deadline: values.deadline,
+        assigneeUserIds: values.assigneeUserIds,
+      }),
+    );
+    if (createTask.rejected.match(result)) {
+      toast.error('Could not create the task', result.payload as string);
+      return;
+    }
+    setDialog({ kind: 'none' });
+    void dispatch(fetchTasksByNode(values.nodeId));
+    toast.success('Task created');
   };
 
-  const isRootView = programId === 'root';
+  if (isLoadingTree && !current) {
+    return <LoadingState label="Loading program…" />;
+  }
+
+  if (treeError && !current) {
+    return (
+      <div className="space-y-4">
+        <Button variant="ghost" size="sm" asChild>
+          <Link href="/programs">
+            <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+            All programs
+          </Link>
+        </Button>
+        <ErrorState title="Could not load this program" message={treeError} onRetry={refresh} />
+      </div>
+    );
+  }
+
+  const inspector = (
+    <NodeInspector
+      node={selectedNode}
+      programId={programId}
+      onEdit={(node) => setDialog({ kind: 'edit', node })}
+      onDelete={(node) => setDialog({ kind: 'delete', node })}
+      onAddChild={(node) => setDialog({ kind: 'create', parent: node })}
+      onAddDependency={(node) => setDialog({ kind: 'dependency', node })}
+      onAddTask={(node) => setDialog({ kind: 'task', node })}
+      onRecordTime={(node) => setDialog({ kind: 'time', node })}
+    />
+  );
 
   return (
-    <div className="space-y-6">
-      {/* 1. ROOT VIEW: Tabular Data Table of All University Events */}
-      {isRootView ? (
-        <div className="bg-slate-900/80 border border-slate-800 p-6 rounded-2xl space-y-5 shadow-2xl">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800/80 pb-4">
-            <div className="space-y-1">
-              <h2 className="text-xl font-extrabold text-white tracking-tight flex items-center gap-2.5">
-                <Calendar className="h-5 w-5 text-indigo-400" />
-                All University Events ({allPrograms.length})
-              </h2>
-              <p className="text-xs text-slate-400">
-                Tabular overview of all event programs created in your institution. Click any event to open its live schedule builder.
-              </p>
-            </div>
-            <Button
-              onClick={() => setCreateProgramModalOpen(true)}
-              className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold h-9 px-4 rounded-xl shadow-lg transition-all self-start sm:self-auto"
-            >
-              <Plus className="mr-1.5 h-4 w-4" /> Create New Event
-            </Button>
-          </div>
+    <RequirePermission action={['program.read', 'node.read']} title="this program">
+      <div className="space-y-4">
+        <PageHeader
+          title={current?.name ?? 'Program'}
+          description={current?.description ?? undefined}
+          meta={
+            current && (
+              <ProgramStatusControl programId={programId} status={current.status} />
+            )
+          }
+          actions={
+            <>
+              <Button variant="ghost" size="sm" asChild>
+                <Link href="/programs">
+                  <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+                  All programs
+                </Link>
+              </Button>
+              <Can action="timeline.read">
+                <Button variant="outline" size="sm" asChild>
+                  <Link href={`/programs/${programId}/live`}>
+                    <Radio className="h-4 w-4" aria-hidden="true" />
+                    Live mode
+                  </Link>
+                </Button>
+              </Can>
+            </>
+          }
+        />
 
-          {allPrograms.length === 0 ? (
-            <div className="p-12 text-center border border-dashed border-slate-800 rounded-xl text-slate-400 text-xs space-y-3">
-              <p className="font-medium">No event programs found for this university.</p>
-              <Button
-                onClick={() => setCreateProgramModalOpen(true)}
-                size="sm"
-                variant="outline"
-                className="text-xs border-slate-700 text-slate-300"
-              >
-                + Create First Event
-              </Button>
-            </div>
-          ) : (
-            <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-950/60">
-              <table className="w-full text-left text-xs text-slate-300">
-                <thead className="bg-slate-900 text-[11px] uppercase tracking-wider text-slate-400 border-b border-slate-800">
-                  <tr>
-                    <th className="py-3.5 px-4 font-bold">Event Title</th>
-                    <th className="py-3.5 px-4 font-bold">Description</th>
-                    <th className="py-3.5 px-4 font-bold">Status</th>
-                    <th className="py-3.5 px-4 font-bold">Version</th>
-                    <th className="py-3.5 px-4 font-bold">Created Date</th>
-                    <th className="py-3.5 px-4 font-bold text-right">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-800/60">
-                  {allPrograms.map((prog) => (
-                    <tr
-                      key={prog.id}
-                      onClick={() => router.push(`/programs/${prog.id}`)}
-                      className="hover:bg-slate-900/80 transition-colors cursor-pointer group"
-                    >
-                      <td className="py-3.5 px-4 font-bold text-white group-hover:text-indigo-400 transition-colors">
-                        <div className="flex items-center gap-2">
-                          <Calendar className="h-4 w-4 text-indigo-400 shrink-0" />
-                          <span className="truncate max-w-[200px]">{prog.name}</span>
-                        </div>
-                      </td>
-                      <td className="py-3.5 px-4 text-slate-400 max-w-[280px] truncate">
-                        {prog.description || 'University event program schedule'}
-                      </td>
-                      <td className="py-3.5 px-4" onClick={(e) => e.stopPropagation()}>
-                        <AsyncEnumSelect
-                          enumName="ProgramStatus"
-                          value={prog.status || 'DRAFT'}
-                          onValueChange={async (newStatus) => {
-                            await dispatch(updateProgramStatus({ programId: prog.id, status: newStatus as any }));
-                            programService.getOrgPrograms().then((progs) => setAllPrograms(progs || []));
-                          }}
-                          triggerClassName="h-6 text-[10px] font-extrabold uppercase bg-indigo-500/10 text-indigo-400 border-indigo-500/30 hover:bg-indigo-500/20 px-2 rounded-full cursor-pointer"
-                        />
-                      </td>
-                      <td className="py-3.5 px-4 font-mono text-slate-400">
-                        v{prog.version || 1}
-                      </td>
-                      <td className="py-3.5 px-4 text-slate-400 whitespace-nowrap">
-                        {formatDate(prog.createdAt)}
-                      </td>
-                      <td className="py-3.5 px-4 text-right whitespace-nowrap">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-7 text-xs font-semibold text-indigo-400 hover:text-indigo-300 hover:bg-indigo-500/10 px-2.5"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            router.push(`/programs/${prog.id}`);
-                          }}
-                        >
-                          Open Schedule <ExternalLink className="ml-1.5 h-3 w-3" />
-                        </Button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
+          <section
+            className="min-h-[26rem] overflow-hidden rounded-xl border border-border bg-card lg:h-[calc(100dvh-16rem)]"
+            aria-label="Event tree"
+          >
+            <NodeTreeContainer
+              tree={tree}
+              selectedNodeId={selectedNodeId}
+              onSelect={handleSelect}
+              onAddChild={(parent) => setDialog({ kind: 'create', parent })}
+              onEdit={(node) => setDialog({ kind: 'edit', node })}
+              onDelete={(node) => setDialog({ kind: 'delete', node })}
+              onAddDependency={(node) => setDialog({ kind: 'dependency', node })}
+              onMove={handleMove}
+              onCreateRoot={
+                tree[0] ? () => setDialog({ kind: 'create', parent: tree[0] }) : undefined
+              }
+            />
+          </section>
+
+          {/* Desktop: the inspector sits beside the tree. */}
+          <section
+            className="hidden overflow-hidden rounded-xl border border-border bg-card lg:block lg:h-[calc(100dvh-16rem)]"
+            aria-label="Node details"
+          >
+            {inspector}
+          </section>
         </div>
-      ) : (
-        /* 2. DEDICATED EVENT DETAIL VIEW: Active Schedule Tree */
-        <div className="space-y-4">
-          <div className="flex items-center justify-between bg-slate-900/60 border border-slate-800 p-4 rounded-2xl">
-            <div className="flex items-center gap-3">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => router.push('/programs/root')}
-                className="h-8 text-xs border-slate-700 bg-slate-950 text-slate-300 hover:bg-slate-800"
-              >
-                <ArrowLeft className="mr-1.5 h-3.5 w-3.5" /> All Events
-              </Button>
-              <div className="h-4 w-[1px] bg-slate-800" />
-              <div className="space-y-0.5">
-                <h2 className="text-base font-bold text-white flex items-center gap-2">
-                  {activeProgramTree?.name || 'Event Schedule'}
-                  <AsyncEnumSelect
-                    enumName="ProgramStatus"
-                    value={(activeProgramTree as any)?.programStatus || 'DRAFT'}
-                    onValueChange={async (newStatus) => {
-                      const targetProgId = getTargetProgramId();
-                      await dispatch(updateProgramStatus({ programId: targetProgId, status: newStatus as any }));
-                      dispatch(fetchProgramTree(targetProgId));
-                    }}
-                    triggerClassName="h-6 text-[10px] font-extrabold uppercase bg-emerald-500/10 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/20 px-2 rounded-full cursor-pointer focus:ring-0 focus:outline-none"
-                  />
-                </h2>
-                {activeProgramTree?.description && (
-                  <p className="text-xs text-slate-400 font-normal">
-                    {activeProgramTree.description}
-                  </p>
-                )}
+
+        {/* Below lg the inspector becomes a sheet so the tree keeps full width. */}
+        <Sheet open={mobileInspectorOpen && Boolean(selectedNode)} onOpenChange={setMobileInspectorOpen}>
+          <SheetContent side="right" className="w-full p-0 sm:max-w-md lg:hidden">
+            <SheetTitle className="sr-only">Node details</SheetTitle>
+            <div className="flex h-full flex-col">
+              <div className="flex justify-end p-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setMobileInspectorOpen(false)}
+                  aria-label="Close details"
+                >
+                  <PanelRightClose className="h-4 w-4" aria-hidden="true" />
+                  Close
+                </Button>
               </div>
+              <div className="min-h-0 flex-1">{inspector}</div>
             </div>
-          </div>
+          </SheetContent>
+        </Sheet>
 
-          <NodeTreeContainer
-            rootTree={activeProgramTree}
-            onAddChild={handleAddChild}
-            onRecordTime={handleRecordTime}
-            onAddDependency={handleAddDependency}
-            onEdit={handleEditNode}
-            onMove={handleMoveNode}
-            onDropMove={handleDropMove}
-            onDelete={handleDeleteNode}
-            onCreateRootNode={() => setCreateProgramModalOpen(true)}
-          />
-        </div>
-      )}
+        {/* Create / edit node */}
+        <Dialog
+          open={dialog.kind === 'create' || dialog.kind === 'edit'}
+          onOpenChange={(open) => !open && setDialog({ kind: 'none' })}
+        >
+          <DialogContent className="max-w-xl">
+            <DialogHeader>
+              <DialogTitle>
+                {dialog.kind === 'edit' ? 'Edit node' : 'Add a node'}
+              </DialogTitle>
+              <DialogDescription>
+                {dialog.kind === 'create'
+                  ? `This will be added under ${dialog.parent.name}.`
+                  : 'Changes apply to this node only — its children keep their own timings.'}
+              </DialogDescription>
+            </DialogHeader>
 
-      <CreateProgramModal
-        isOpen={createProgramModalOpen}
-        onClose={() => setCreateProgramModalOpen(false)}
-        onSubmit={handleCreateProgramSubmit}
-      />
+            {dialog.kind === 'create' && (
+              <NodeForm
+                parent={dialog.parent}
+                onSubmit={(values) => handleCreateNode(dialog.parent, values)}
+                onCancel={() => setDialog({ kind: 'none' })}
+              />
+            )}
+            {dialog.kind === 'edit' && (
+              <NodeForm
+                node={dialog.node}
+                onSubmit={(values) => handleUpdateNode(dialog.node, values)}
+                onCancel={() => setDialog({ kind: 'none' })}
+              />
+            )}
+          </DialogContent>
+        </Dialog>
 
-      <CreateNodeModal
-        isOpen={createModalOpen}
-        onClose={() => setCreateModalOpen(false)}
-        parentNode={selectedParentNode}
-        onSubmit={handleCreateNodeSubmit}
-      />
+        <ConfirmDialog
+          open={dialog.kind === 'delete'}
+          onOpenChange={(open) => !open && setDialog({ kind: 'none' })}
+          title="Delete this node?"
+          description={
+            dialog.kind === 'delete' ? (
+              <>
+                <span className="font-medium text-foreground">{dialog.node.name}</span> and every
+                node beneath it will be permanently deleted, along with their tasks and
+                dependencies. This cannot be undone.
+              </>
+            ) : (
+              ''
+            )
+          }
+          confirmLabel="Delete node"
+          onConfirm={async () => {
+            if (dialog.kind === 'delete') await handleDeleteNode(dialog.node);
+          }}
+        />
 
-      <RecordActualTimeModal
-        isOpen={actualTimeModalOpen}
-        onClose={() => setActualTimeModalOpen(false)}
-        node={targetTimeNode}
-        onSubmit={handleRecordTimeSubmit}
-      />
+        <CreateDependencyModal
+          open={dialog.kind === 'dependency'}
+          onOpenChange={(open) => !open && setDialog({ kind: 'none' })}
+          node={dialog.kind === 'dependency' ? dialog.node : null}
+          candidates={allNodes}
+          onCreated={refresh}
+        />
 
-      <CreateDependencyModal
-        isOpen={depModalOpen}
-        onClose={() => setDepModalOpen(false)}
-        predecessorNode={predecessorNode}
-        rootTree={activeProgramTree}
-        onSubmit={handleDependencySubmit}
-      />
+        <TaskFormModal
+          open={dialog.kind === 'task'}
+          onOpenChange={(open) => !open && setDialog({ kind: 'none' })}
+          defaultNodeId={dialog.kind === 'task' ? dialog.node.id : undefined}
+          nodes={allNodes}
+          onSubmit={handleCreateTask}
+        />
 
-      <MoveNodeModal
-        isOpen={moveModalOpen}
-        onClose={() => setMoveModalOpen(false)}
-        targetNode={targetMoveNode}
-        rootTree={activeProgramTree}
-        onSubmit={handleMoveSubmit}
-      />
-
-      <EditNodeModal
-        isOpen={editModalOpen}
-        onClose={() => setEditModalOpen(false)}
-        node={targetEditNode}
-        onSubmit={handleEditSubmit}
-      />
-    </div>
+        <RecordActualTimeModal
+          open={dialog.kind === 'time'}
+          onOpenChange={(open) => !open && setDialog({ kind: 'none' })}
+          node={dialog.kind === 'time' ? dialog.node : null}
+          programId={programId}
+          onRecorded={refresh}
+        />
+      </div>
+    </RequirePermission>
   );
 }

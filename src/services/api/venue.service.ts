@@ -1,24 +1,33 @@
-import { axiosInstance } from './axiosInstance';
-import { CreateVenueInput, CreateResourceInput } from '@/utils/validationSchemas';
+import type { PhysicalResource, Venue } from '@/types';
+import { apiGet, apiPost } from './axiosInstance';
+
+export interface CreateVenuePayload {
+  name: string;
+  building?: string;
+  capacity?: number;
+}
+
+export interface CreateResourcePayload {
+  name: string;
+  type: string;
+  quantity: number;
+  venueId?: string | null;
+}
 
 export const venueService = {
-  async createVenue(data: CreateVenueInput) {
-    const response = await axiosInstance.post('/venues', data);
-    return response.data.data;
+  async listVenues() {
+    return apiGet<Venue[]>('/venues');
   },
 
-  async getVenues() {
-    const response = await axiosInstance.get('/venues');
-    return response.data.data;
+  async createVenue(payload: CreateVenuePayload) {
+    return apiPost<Venue>('/venues', payload);
   },
 
-  async createResource(data: CreateResourceInput) {
-    const response = await axiosInstance.post('/venues/resources', data);
-    return response.data.data;
+  async listResources() {
+    return apiGet<PhysicalResource[]>('/venues/resources');
   },
 
-  async getResources() {
-    const response = await axiosInstance.get('/venues/resources');
-    return response.data.data;
+  async createResource(payload: CreateResourcePayload) {
+    return apiPost<PhysicalResource>('/venues/resources', payload);
   },
 };

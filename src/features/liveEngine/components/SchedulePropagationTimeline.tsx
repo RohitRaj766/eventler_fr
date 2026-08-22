@@ -1,88 +1,140 @@
 'use client';
 
-import { ScheduleChange, Node } from '@/types';
-import { formatTimeOnly, formatDate } from '@/utils/formatters';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Radio, ArrowRight, Activity, Clock, ShieldAlert } from 'lucide-react';
+import { AlertTriangle, ArrowRight, History } from 'lucide-react';
+import type { ScheduleChange } from '@/types';
+import { EmptyState, SkeletonText } from '@/components/ui/states';
+import { StatusBadge } from '@/components/ui/status-badge';
+import { formatDateTime, formatDuration, formatTimeOnly, fullName } from '@/utils/formatters';
+import { cn } from '@/lib/utils';
 
-interface SchedulePropagationTimelineProps {
+/**
+ * Audit trail of every schedule change, newest first.
+ *
+ * Each entry shows the before and after side by side plus how far the change
+ * rippled, because "the keynote moved" matters far less than "the keynote
+ * moved and pushed four downstream sessions".
+ */
+export function SchedulePropagationTimeline({
+  changes,
+  isLoading,
+  nodeNames,
+}: {
   changes: ScheduleChange[];
-  activeProgramTree?: Node | null;
-}
+  isLoading?: boolean;
+  /** Node id -> name, for resolving the affected-node ids. */
+  nodeNames?: Map<string, string>;
+}) {
+  if (isLoading && !changes.length) return <SkeletonText lines={6} className="p-4" />;
 
-export function SchedulePropagationTimeline({ changes, activeProgramTree }: SchedulePropagationTimelineProps) {
+  if (!changes.length) {
+    return (
+      <EmptyState
+        icon={History}
+        title="No schedule changes yet"
+        description="Once someone records an actual time, every adjustment the engine makes will be listed here."
+      />
+    );
+  }
+
   return (
-    <Card className="border-border/60 shadow-lg">
-      <CardHeader className="flex flex-row items-center justify-between border-b pb-4">
-        <div>
-          <CardTitle className="text-lg font-bold flex items-center gap-2">
-            <Radio className="h-5 w-5 text-indigo-400 animate-pulse" />
-            Topological Impact Propagation Feed
-          </CardTitle>
-          <CardDescription>
-            Authoritative event schedule change stream and downstream impact correlation log.
-          </CardDescription>
-        </div>
-        <Badge variant="outline" className="font-mono text-xs text-emerald-400 border-emerald-500/30">
-          <Activity className="mr-1 h-3 w-3" /> Live Socket Sync
-        </Badge>
-      </CardHeader>
+    <ol className="relative space-y-0">
+      {changes.map((change, index) => {
+        const delay = Number(change.newState?.delayMinutes ?? 0);
+        const previousEnd = change.previousState?.projectedEndTime;
+        const newEnd = change.newState?.projectedEndTime;
+        const isLast = index === changes.length - 1;
 
-      <CardContent className="p-4 sm:p-6 space-y-4">
-        {changes.length === 0 ? (
-          <div className="py-12 text-center text-muted-foreground">
-            <Clock className="mx-auto h-8 w-8 opacity-40 mb-2" />
-            <p className="text-sm font-medium">No live schedule shifts logged yet.</p>
-            <p className="text-xs text-muted-foreground">
-              When actual times are recorded, downstream node updates will stream live right here.
-            </p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {changes.map((change) => (
-              <div
-                key={change.id}
-                className="flex flex-col gap-2 rounded-xl border bg-card/80 p-4 shadow-xs transition-all hover:border-indigo-500/40"
-              >
-                <div className="flex items-center justify-between flex-wrap gap-2">
-                  <div className="flex items-center gap-2">
-                    <Badge className="bg-indigo-500/10 text-indigo-400 border-indigo-500/20 font-mono text-[10px]">
-                      Correlation #{change.correlationId.slice(0, 8)}
-                    </Badge>
-                    <span className="text-xs text-muted-foreground">
-                      {formatDate(change.createdAt)}
-                    </span>
-                  </div>
-                  <Badge variant="destructive" className="text-[10px]">
-                    <ShieldAlert className="mr-1 h-3 w-3" /> Affected Nodes: {change.affectedNodes?.length || 0}
-                  </Badge>
+        return (
+          <li key={change.id} className="relative flex gap-4 pb-6 last:pb-0">
+            {/* Connector rail */}
+            {!isLast && (
+              <span
+                className="absolute left-[0.5625rem] top-6 h-full w-px bg-border"
+                aria-hidden="true"
+              />
+            )}
+            <span
+              className={cn(
+                'relative z-10 mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full ring-4 ring-background',
+                delay > 0 ? 'bg-amber-500' : 'bg-emerald-500',
+              )}
+              aria-hidden="true"
+            />
+
+            <div className="min-w-0 flex-1 rounded-lg border border-border bg-card p-3.5">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-foreground">
+                    {change.node?.name ?? nodeNames?.get(change.nodeId) ?? 'Node'}
+                  </p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    {formatDateTime(change.createdAt)} · {fullName(change.actor)}
+                  </p>
                 </div>
-
-                <p className="text-sm font-semibold text-foreground">
-                  Reason: <span className="text-primary">{change.reason}</span>
-                </p>
-
-                {/* State shift details */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-2 rounded-lg bg-muted/40 p-3 text-xs">
-                  <div>
-                    <span className="font-semibold text-muted-foreground block mb-1">Previous Schedule State:</span>
-                    <pre className="text-[11px] font-mono overflow-x-auto text-amber-400 bg-background/50 p-2 rounded">
-                      {JSON.stringify(change.previousState, null, 2)}
-                    </pre>
-                  </div>
-                  <div>
-                    <span className="font-semibold text-muted-foreground block mb-1">New Projected State:</span>
-                    <pre className="text-[11px] font-mono overflow-x-auto text-emerald-400 bg-background/50 p-2 rounded">
-                      {JSON.stringify(change.newState, null, 2)}
-                    </pre>
-                  </div>
-                </div>
+                {delay > 0 ? (
+                  <span className="flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-semibold text-amber-700 dark:text-amber-300">
+                    <AlertTriangle className="h-3 w-3" aria-hidden="true" />
+                    {formatDuration(delay)} late
+                  </span>
+                ) : (
+                  <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-xs font-semibold text-emerald-700 dark:text-emerald-300">
+                    On time
+                  </span>
+                )}
               </div>
-            ))}
-          </div>
-        )}
-      </CardContent>
-    </Card>
+
+              <p className="mt-2 text-sm text-muted-foreground">{change.reason}</p>
+
+              <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+                {change.previousState?.status && (
+                  <>
+                    <StatusBadge value={change.previousState.status} />
+                    <ArrowRight className="h-3 w-3 text-muted-foreground" aria-hidden="true" />
+                  </>
+                )}
+                {change.newState?.status && <StatusBadge value={change.newState.status} />}
+              </div>
+
+              {previousEnd && newEnd && previousEnd !== newEnd && (
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Projected end moved{' '}
+                  <span className="font-medium tabular-nums line-through">
+                    {formatTimeOnly(previousEnd)}
+                  </span>{' '}
+                  <ArrowRight className="inline h-3 w-3" aria-hidden="true" />{' '}
+                  <span className="font-medium tabular-nums text-foreground">
+                    {formatTimeOnly(newEnd)}
+                  </span>
+                </p>
+              )}
+
+              {change.affectedNodes.length > 0 && (
+                <div className="mt-3 border-t border-border pt-2.5">
+                  <p className="text-xs font-medium text-foreground">
+                    Downstream impact · {change.affectedNodes.length}{' '}
+                    {change.affectedNodes.length === 1 ? 'node' : 'nodes'} rescheduled
+                  </p>
+                  <ul className="mt-1.5 flex flex-wrap gap-1.5">
+                    {change.affectedNodes.slice(0, 6).map((nodeId) => (
+                      <li
+                        key={nodeId}
+                        className="rounded border border-border px-1.5 py-0.5 text-xs text-muted-foreground"
+                      >
+                        {nodeNames?.get(nodeId) ?? 'Node'}
+                      </li>
+                    ))}
+                    {change.affectedNodes.length > 6 && (
+                      <li className="px-1.5 py-0.5 text-xs text-muted-foreground">
+                        +{change.affectedNodes.length - 6} more
+                      </li>
+                    )}
+                  </ul>
+                </div>
+              )}
+            </div>
+          </li>
+        );
+      })}
+    </ol>
   );
 }

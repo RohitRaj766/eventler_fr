@@ -1,248 +1,163 @@
 'use client';
 
-import { useAppSelector } from '@/app/hooks';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import {
-  LayoutDashboard,
-  FolderTree,
-  Radio,
-  CheckSquare,
+  Bell,
   Building2,
-  ShieldCheck,
-  Users,
-  History,
+  CalendarRange,
+  ClipboardList,
   CreditCard,
-  FileText,
-  ChevronsUpDown,
-  MoreVertical,
+  History,
+  LayoutDashboard,
+  type LucideIcon,
+  Package,
+  ShieldCheck,
   Sparkles,
+  Users,
 } from 'lucide-react';
-import { SidebarNavGroup } from './sidebar/SidebarNavGroup';
-import { NavItemProps } from './sidebar/SidebarNavItem';
+import { usePermissions, type PermissionAction } from '@/hooks/usePermission';
+import { useAppSelector } from '@/app/hooks';
+import { selectUnreadCount } from '@/features/notification/notificationSlice';
+import { cn } from '@/lib/utils';
 
-interface NavGroupDef {
-  groupName: string;
-  items: (NavItemProps & { requiredAction?: string; adminOnly?: boolean; superAdminOnly?: boolean })[];
+interface NavItem {
+  label: string;
+  href: string;
+  icon: LucideIcon;
+  /** Hidden unless the user holds one of these actions. */
+  permission?: PermissionAction | PermissionAction[];
+  /** Renders a count chip; only shown when greater than zero. */
+  badge?: number;
 }
 
+interface NavSection {
+  label: string;
+  items: NavItem[];
+}
+
+/**
+ * Primary navigation.
+ *
+ * Sections whose items are all denied disappear entirely, so a volunteer sees
+ * a short, honest menu instead of a wall of links that would 403.
+ */
 export function AppSidebar({ onNavigate }: { onNavigate?: () => void }) {
-  const { user, activeOrg } = useAppSelector((state) => state.auth);
+  const pathname = usePathname();
+  const { can } = usePermissions();
+  const unread = useAppSelector(selectUnreadCount);
+  const activeOrgId = useAppSelector((state) => state.auth.activeOrgId);
+  const organizations = useAppSelector((state) => state.auth.organizations);
+  const activeOrg = organizations.find((org) => org.id === activeOrgId);
 
-  const userName = user ? `${user.firstName} ${user.lastName}` : 'Alex Rivera';
-  const userEmail = user?.email || 'user@gmail.com';
-  const initials = user
-    ? `${user.firstName?.[0] || ''}${user.lastName?.[0] || ''}`.toUpperCase()
-    : 'AR';
-
-  const userPermissions = user?.permissions || [];
-  const activeOrgObj = activeOrg || (user?.organizations && user.organizations[0]);
-
-  const currentUserRoleName =
-    activeOrgObj?.role ||
-    user?.organizations?.find((o: any) => o.id === activeOrgObj?.id)?.role ||
-    user?.role ||
-    '';
-
-  const isSuperAdmin =
-    currentUserRoleName === 'Organization Super Admin' ||
-    currentUserRoleName === 'ORG_SUPER_ADMIN' ||
-    userPermissions.includes('*');
-
-  const isAdmin =
-    isSuperAdmin ||
-    currentUserRoleName === 'Organization Admin' ||
-    currentUserRoleName === 'ORG_ADMIN' ||
-    userPermissions.includes('org.read') ||
-    userPermissions.includes('role.manage');
-
-  const canAccess = (item: NavItemProps & { requiredAction?: string; adminOnly?: boolean; superAdminOnly?: boolean }) => {
-    if (isSuperAdmin) return true;
-    if (item.superAdminOnly) return false;
-    if (item.adminOnly && !isAdmin) return false;
-    if (item.requiredAction) {
-      return (
-        isAdmin ||
-        userPermissions.includes(item.requiredAction) ||
-        userPermissions.includes('*')
-      );
-    }
-    return true;
-  };
-
-  const rawNavGroups: NavGroupDef[] = [
+  const sections: NavSection[] = [
     {
-      groupName: 'Analytics',
+      label: 'Overview',
       items: [
-        {
-          title: 'Dashboard Overview',
-          href: '/dashboard',
-          icon: LayoutDashboard,
-        },
+        { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
+        { label: 'Notifications', href: '/notifications', icon: Bell, badge: unread },
       ],
     },
     {
-      groupName: 'Event Operations',
+      label: 'Event operations',
       items: [
         {
-          title: 'Event Schedule Builder',
-          href: '/programs/root',
-          icon: FolderTree,
-          adminOnly: true,
-          requiredAction: 'program.create',
-          subItems: [
-            { title: 'Active Event Schedule', href: '/programs/root' },
-          ],
+          label: 'Programs',
+          href: '/programs',
+          icon: CalendarRange,
+          permission: ['program.read', 'program.create'],
         },
-        {
-          title: 'Live Stage Tracker',
-          href: '/live-engine',
-          icon: Radio,
-          adminOnly: true,
-          requiredAction: 'timeline.update',
-          subItems: [
-            { title: 'Live Stage Control Room', href: '/live-engine' },
-          ],
-        },
-        {
-          title: 'Task Board',
-          href: '/tasks',
-          icon: CheckSquare,
-          subItems: [
-            { title: 'Readiness & Kanban', href: '/tasks' },
-          ],
-        },
-        {
-          title: 'Venues and Equipment',
-          href: '/venues',
-          icon: Building2,
-          adminOnly: true,
-          requiredAction: 'venue.manage',
-          subItems: [
-            { title: 'Resource Inventory', href: '/venues' },
-          ],
-        },
+        { label: 'Tasks', href: '/tasks', icon: ClipboardList, permission: 'task.read' },
+        { label: 'Venues', href: '/venues', icon: Building2, permission: 'venue.manage' },
+        { label: 'Resources', href: '/resources', icon: Package, permission: 'venue.manage' },
       ],
     },
     {
-      groupName: 'Governance',
+      label: 'Administration',
       items: [
+        { label: 'Organization', href: '/organization', icon: Building2, permission: 'org.read' },
+        { label: 'Members', href: '/organization/members', icon: Users, permission: 'org.read' },
         {
-          title: 'Roles and Permissions',
-          href: '/roles',
+          label: 'Roles & permissions',
+          href: '/organization/roles',
           icon: ShieldCheck,
-          adminOnly: true,
-          requiredAction: 'role.manage',
-          subItems: [
-            { title: 'Role Category Pools', href: '/roles' },
-          ],
+          permission: 'role.manage',
         },
         {
-          title: 'University Members',
-          href: '/members',
-          icon: Users,
-          subItems: [
-            { title: 'Member Roster and Roles', href: '/members' },
-          ],
-        },
-        {
-          title: 'Activity Logs',
-          href: '/audit-logs',
-          icon: History,
-          superAdminOnly: true,
-          requiredAction: 'audit.read',
-          subItems: [
-            { title: 'Audit Trail Stream', href: '/audit-logs' },
-          ],
-        },
-      ],
-    },
-    {
-      groupName: 'Finances',
-      items: [
-        {
-          title: 'Billing and Plan',
-          href: '/billing',
+          label: 'Billing',
+          href: '/organization/billing',
           icon: CreditCard,
-          superAdminOnly: true,
-          requiredAction: 'org.billing',
-          subItems: [
-            { title: 'Subscription and Quotas', href: '/billing' },
-          ],
+          permission: 'org.billing',
         },
-        {
-          title: 'Invoices and Receipts',
-          href: '/billing/invoices',
-          icon: FileText,
-          superAdminOnly: true,
-          requiredAction: 'org.billing',
-          subItems: [
-            { title: 'Tax Statements and PDFs', href: '/billing/invoices' },
-          ],
-        },
-        {
-          title: 'Payment Methods',
-          href: '/billing/payment-methods',
-          icon: Building2,
-          superAdminOnly: true,
-          requiredAction: 'org.billing',
-          subItems: [
-            { title: 'Corporate Cards and Contacts', href: '/billing/payment-methods' },
-          ],
-        },
+        { label: 'Audit log', href: '/audit', icon: History, permission: 'audit.read' },
       ],
     },
   ];
 
-  const navGroups = rawNavGroups
-    .map((group) => ({
-      ...group,
-      items: group.items.filter(canAccess),
+  const visibleSections = sections
+    .map((section) => ({
+      ...section,
+      items: section.items.filter((item) => can(item.permission)),
     }))
-    .filter((group) => group.items.length > 0);
+    .filter((section) => section.items.length > 0);
+
+  const isActive = (href: string) =>
+    pathname === href || (href !== '/dashboard' && pathname?.startsWith(`${href}/`));
 
   return (
-    <aside className="flex flex-col h-full bg-white border-r border-slate-200/80 w-64 select-none">
-      {/* Brand Header */}
-      <div className="flex items-center justify-between px-4 py-4 border-b border-slate-100">
-        <div className="flex items-center gap-2.5">
-          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-indigo-600 text-white shadow-xs">
-            <Sparkles className="h-4 w-4" />
-          </div>
-          <span className="font-bold text-sm text-slate-900 tracking-tight">Eventler</span>
+    <nav
+      aria-label="Main navigation"
+      className="flex h-full w-64 flex-col border-r border-sidebar-border bg-sidebar"
+    >
+      <div className="flex h-16 items-center gap-2.5 border-b border-sidebar-border px-5">
+        <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+          <Sparkles className="h-4 w-4" aria-hidden="true" />
+        </span>
+        <div className="min-w-0">
+          <p className="text-sm font-semibold tracking-tight text-sidebar-foreground">Eventler</p>
+          {activeOrg && (
+            <p className="truncate text-xs text-muted-foreground">{activeOrg.name}</p>
+          )}
         </div>
-        <button className="text-slate-400 hover:text-slate-600 transition-colors">
-          <ChevronsUpDown className="h-4 w-4" />
-        </button>
       </div>
 
-      {/* Modular Navigation Collapsible Sections */}
-      <div className="flex-1 overflow-y-auto p-3 space-y-4">
-        {navGroups.map((group) => (
-          <SidebarNavGroup
-            key={group.groupName}
-            groupName={group.groupName}
-            items={group.items}
-            onNavigate={onNavigate}
-          />
+      <div className="scrollbar-thin flex-1 overflow-y-auto px-3 py-4">
+        {visibleSections.map((section) => (
+          <div key={section.label} className="mb-5 last:mb-0">
+            <p className="px-2 pb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              {section.label}
+            </p>
+            <ul className="space-y-0.5">
+              {section.items.map((item) => {
+                const active = isActive(item.href);
+                return (
+                  <li key={item.href}>
+                    <Link
+                      href={item.href}
+                      onClick={onNavigate}
+                      aria-current={active ? 'page' : undefined}
+                      className={cn(
+                        'flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm font-medium transition-colors',
+                        active
+                          ? 'bg-accent text-accent-foreground'
+                          : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                      )}
+                    >
+                      <item.icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+                      <span className="flex-1 truncate">{item.label}</span>
+                      {Boolean(item.badge) && (
+                        <span className="rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-semibold leading-none text-primary-foreground tabular-nums">
+                          {item.badge! > 99 ? '99+' : item.badge}
+                        </span>
+                      )}
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
         ))}
       </div>
-
-      {/* User Account Card Footer */}
-      <div className="p-3 border-t border-slate-100 flex items-center justify-between">
-        <div className="flex items-center gap-2.5 min-w-0">
-          <Avatar className="h-8 w-8 border shrink-0">
-            <AvatarImage src={user?.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80'} />
-            <AvatarFallback className="bg-slate-900 text-white font-bold text-xs">{initials}</AvatarFallback>
-          </Avatar>
-          <div className="min-w-0 flex-1">
-            <p className="text-xs font-semibold text-slate-900 truncate leading-tight">{userName}</p>
-            <p className="text-[11px] text-slate-400 truncate leading-tight">{userEmail}</p>
-          </div>
-        </div>
-        <button className="text-slate-400 hover:text-slate-600 p-1">
-          <MoreVertical className="h-4 w-4" />
-        </button>
-      </div>
-    </aside>
+    </nav>
   );
 }

@@ -1,232 +1,268 @@
 'use client';
 
-import { useState } from 'react';
-import { cn } from '@/lib/utils';
-import { Node } from '@/types';
-import { getStatusColorClass, formatTimeOnly, getNodeTypeLabel } from '@/utils/formatters';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
+import { useState, type DragEvent, type KeyboardEvent } from 'react';
 import {
   ChevronRight,
-  ChevronDown,
-  Plus,
   Clock,
-  Link as LinkIcon,
-  Move,
+  MapPin,
+  MoreVertical,
+  Plus,
   Trash2,
-  Calendar,
-  Layers,
   Pencil,
+  GitBranch,
+  ListChecks,
+  GripVertical,
 } from 'lucide-react';
+import type { EventNode } from '@/types';
+import { StatusDot } from '@/components/ui/status-badge';
+import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { Can } from '@/components/auth/Can';
+import { formatDuration, formatTimeOnly, getNodeTypeLabel, nodeDelayMinutes } from '@/utils/formatters';
+import { cn } from '@/lib/utils';
+
+export type DropPosition = 'inside' | 'before' | 'after';
 
 export interface TreeNodeRowProps {
-  node: Node;
-  depth?: number;
-  onAddChild?: (node: Node) => void;
-  onRecordTime?: (node: Node) => void;
-  onAddDependency?: (node: Node) => void;
-  onEdit?: (node: Node) => void;
-  onMove?: (node: Node) => void;
-  onDropMove?: (draggedId: string, targetId: string) => void;
-  onDelete?: (node: Node) => void;
+  node: EventNode;
+  depth: number;
+  isSelected: boolean;
+  isExpanded: boolean;
+  hasChildren: boolean;
+  /** Ids currently being dragged, so a node cannot be dropped into itself. */
+  draggingId: string | null;
+  canDropInto: (targetId: string) => boolean;
+  onToggle: () => void;
+  onSelect: () => void;
+  onAddChild: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+  onAddDependency: () => void;
+  onDragStart: (nodeId: string) => void;
+  onDragEnd: () => void;
+  onDrop: (targetId: string, position: DropPosition) => void;
 }
 
+/**
+ * One row of the event tree.
+ *
+ * The row is a real button so the tree is fully keyboard-navigable, and drag
+ * and drop is layered on top rather than being the only way to reorder — the
+ * kebab menu offers the same moves for anyone not using a pointer.
+ */
 export function TreeNodeRow({
   node,
-  depth = 0,
+  depth,
+  isSelected,
+  isExpanded,
+  hasChildren,
+  draggingId,
+  canDropInto,
+  onToggle,
+  onSelect,
   onAddChild,
-  onRecordTime,
-  onAddDependency,
   onEdit,
-  onMove,
-  onDropMove,
   onDelete,
+  onAddDependency,
+  onDragStart,
+  onDragEnd,
+  onDrop,
 }: TreeNodeRowProps) {
-  const [isExpanded, setIsExpanded] = useState(true);
-  const [isDragOver, setIsDragOver] = useState(false);
-  const childrenList = node.children || (node as any).tree || [];
-  const hasChildren = childrenList.length > 0;
+  const [dropTarget, setDropTarget] = useState<DropPosition | null>(null);
 
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-    setIsDragOver(true);
+  const delay = nodeDelayMinutes(node);
+  const isDragging = draggingId === node.id;
+  const droppable = Boolean(draggingId) && draggingId !== node.id && canDropInto(node.id);
+  const taskCount = node.tasks?.length ?? 0;
+  const depCount = (node.predecessors?.length ?? 0) + (node.successors?.length ?? 0);
+
+  /** Top/bottom eighth reorders as a sibling; the middle re-parents. */
+  const positionFromPointer = (event: DragEvent<HTMLDivElement>): DropPosition => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const offset = (event.clientY - rect.top) / rect.height;
+    if (offset < 0.25) return 'before';
+    if (offset > 0.75) return 'after';
+    return 'inside';
   };
 
-  const handleDragLeave = () => {
-    setIsDragOver(false);
+  const handleDragOver = (event: DragEvent<HTMLDivElement>) => {
+    if (!droppable) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+    setDropTarget(positionFromPointer(event));
   };
 
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragOver(false);
-    const draggedId = e.dataTransfer.getData('text/plain');
-    if (draggedId && draggedId !== node.id) {
-      onDropMove?.(draggedId, node.id);
+  const handleDrop = (event: DragEvent<HTMLDivElement>) => {
+    if (!droppable) return;
+    event.preventDefault();
+    const position = positionFromPointer(event);
+    setDropTarget(null);
+    onDrop(node.id, position);
+  };
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
+    if (event.key === 'ArrowRight' && hasChildren && !isExpanded) {
+      event.preventDefault();
+      onToggle();
+    }
+    if (event.key === 'ArrowLeft' && hasChildren && isExpanded) {
+      event.preventDefault();
+      onToggle();
     }
   };
 
   return (
-    <div className="space-y-2">
-      {/* Node Container Box */}
+    <div
+      onDragOver={handleDragOver}
+      onDragLeave={() => setDropTarget(null)}
+      onDrop={handleDrop}
+      className={cn(
+        'relative rounded-lg border transition-colors',
+        isSelected ? 'border-primary bg-accent/50' : 'border-transparent hover:bg-muted/50',
+        isDragging && 'opacity-40',
+        dropTarget === 'inside' && 'border-primary bg-primary/10 ring-1 ring-primary',
+      )}
+    >
+      {/* Sibling drop indicators */}
+      {dropTarget === 'before' && (
+        <span className="absolute -top-px left-0 right-0 h-0.5 rounded-full bg-primary" aria-hidden="true" />
+      )}
+      {dropTarget === 'after' && (
+        <span className="absolute -bottom-px left-0 right-0 h-0.5 rounded-full bg-primary" aria-hidden="true" />
+      )}
+
       <div
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
-        className={cn(
-          "group relative flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border bg-card/60 p-3 shadow-xs hover:border-primary/50 transition-all duration-200 backdrop-blur-xs",
-          isDragOver && "border-2 border-amber-500 bg-amber-500/10 shadow-lg ring-2 ring-amber-500/30"
-        )}
+        className="flex items-center gap-1 py-1 pr-1"
+        style={{ paddingLeft: `${depth * 1.1 + 0.25}rem` }}
       >
-        {/* Left Side: Type, Expand Toggle, Title & Times */}
-        <div className="flex items-start sm:items-center gap-3">
-          {hasChildren ? (
+        {hasChildren ? (
+          <button
+            type="button"
+            onClick={onToggle}
+            aria-label={isExpanded ? `Collapse ${node.name}` : `Expand ${node.name}`}
+            aria-expanded={isExpanded}
+            className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            <ChevronRight
+              className={cn('h-3.5 w-3.5 transition-transform', isExpanded && 'rotate-90')}
+              aria-hidden="true"
+            />
+          </button>
+        ) : (
+          <span className="h-6 w-6 shrink-0" />
+        )}
+
+        <span
+          draggable={depth > 0}
+          onDragStart={(event) => {
+            event.dataTransfer.effectAllowed = 'move';
+            event.dataTransfer.setData('text/plain', node.id);
+            onDragStart(node.id);
+          }}
+          onDragEnd={onDragEnd}
+          className={cn(
+            'hidden h-6 w-5 shrink-0 items-center justify-center text-muted-foreground/50 sm:flex',
+            depth > 0 ? 'cursor-grab active:cursor-grabbing hover:text-muted-foreground' : 'opacity-0',
+          )}
+          aria-hidden="true"
+        >
+          <GripVertical className="h-3.5 w-3.5" />
+        </span>
+
+        <button
+          type="button"
+          onClick={onSelect}
+          onKeyDown={handleKeyDown}
+          aria-current={isSelected ? 'true' : undefined}
+          className="flex min-w-0 flex-1 items-center gap-2.5 rounded-md px-1.5 py-1.5 text-left"
+        >
+          <StatusDot value={node.status} />
+
+          <span className="min-w-0 flex-1">
+            <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+              <span className="truncate text-sm font-medium text-foreground">{node.name}</span>
+              <span className="rounded border border-border px-1.5 py-px text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                {getNodeTypeLabel(node.type, node.customTypeName)}
+              </span>
+              {delay > 0 && (
+                <span className="rounded bg-amber-500/15 px-1.5 py-px text-[10px] font-semibold text-amber-700 dark:text-amber-300">
+                  +{formatDuration(delay)} late
+                </span>
+              )}
+            </span>
+
+            <span className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
+              <span className="flex items-center gap-1">
+                <Clock className="h-3 w-3" aria-hidden="true" />
+                {formatTimeOnly(node.projectedStartTime)} – {formatTimeOnly(node.projectedEndTime)}
+              </span>
+              {node.venue?.name && (
+                <span className="flex items-center gap-1 truncate">
+                  <MapPin className="h-3 w-3" aria-hidden="true" />
+                  {node.venue.name}
+                </span>
+              )}
+              {taskCount > 0 && (
+                <span className="flex items-center gap-1">
+                  <ListChecks className="h-3 w-3" aria-hidden="true" />
+                  {taskCount}
+                </span>
+              )}
+              {depCount > 0 && (
+                <span className="flex items-center gap-1">
+                  <GitBranch className="h-3 w-3" aria-hidden="true" />
+                  {depCount}
+                </span>
+              )}
+            </span>
+          </span>
+        </button>
+
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
             <Button
               variant="ghost"
               size="icon"
-              className="h-6 w-6 p-0 shrink-0 text-muted-foreground hover:text-foreground"
-              onClick={() => setIsExpanded(!isExpanded)}
+              className="h-7 w-7 shrink-0"
+              aria-label={`Actions for ${node.name}`}
             >
-              {isExpanded ? (
-                <ChevronDown className="h-4 w-4" />
-              ) : (
-                <ChevronRight className="h-4 w-4" />
-              )}
+              <MoreVertical className="h-3.5 w-3.5" aria-hidden="true" />
             </Button>
-          ) : (
-            <span className="h-6 w-6 shrink-0" />
-          )}
-
-          <div className="flex flex-col gap-1">
-            <div className="flex items-center gap-2 flex-wrap">
-              <Badge variant="outline" className="text-[10px] uppercase font-bold tracking-wider">
-                <Layers className="mr-1 h-2.5 w-2.5" />
-                {getNodeTypeLabel(node.type, node.customTypeName)}
-              </Badge>
-              <h4 className="font-semibold text-sm tracking-tight text-foreground">
-                {node.name}
-              </h4>
-              <Badge className={`text-[10px] font-bold border ${getStatusColorClass(node.status)}`}>
-                {node.status}
-              </Badge>
-            </div>
-
-            {node.description && (
-              <p className="text-xs text-muted-foreground font-normal line-clamp-1">
-                {node.description}
-              </p>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-52">
+            <Can action="node.create">
+              <DropdownMenuItem onSelect={onAddChild}>
+                <Plus className="h-4 w-4" aria-hidden="true" /> Add child node
+              </DropdownMenuItem>
+            </Can>
+            <Can action="node.update">
+              <DropdownMenuItem onSelect={onEdit}>
+                <Pencil className="h-4 w-4" aria-hidden="true" /> Edit node
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={onAddDependency}>
+                <GitBranch className="h-4 w-4" aria-hidden="true" /> Add dependency
+              </DropdownMenuItem>
+            </Can>
+            {depth > 0 && (
+              <Can action="node.delete">
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onSelect={onDelete}
+                  className="text-destructive focus:text-destructive"
+                >
+                  <Trash2 className="h-4 w-4" aria-hidden="true" /> Delete node
+                </DropdownMenuItem>
+              </Can>
             )}
-
-            {/* Timelines Info */}
-            <div className="flex items-center gap-4 text-xs text-muted-foreground flex-wrap">
-              <span className="flex items-center gap-1">
-                <Calendar className="h-3 w-3 text-indigo-400" />
-                Planned: {formatTimeOnly(node.plannedStartTime)} - {formatTimeOnly(node.plannedEndTime)}
-              </span>
-              <span className="flex items-center gap-1 font-mono text-violet-400">
-                <Clock className="h-3 w-3" />
-                Projected: {formatTimeOnly(node.projectedStartTime)} - {formatTimeOnly(node.projectedEndTime)}
-              </span>
-              {node.actualStartTime && (
-                <span className="flex items-center gap-1 font-mono text-emerald-400 font-semibold">
-                  Actual: {formatTimeOnly(node.actualStartTime)}
-                </span>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Right Side: Quick Action Toolbar */}
-        <div className="flex items-center gap-1 self-end sm:self-auto shrink-0 opacity-90 group-hover:opacity-100 transition-opacity">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-8 px-2 text-xs hover:bg-emerald-500/10 hover:text-emerald-400"
-            onClick={() => onRecordTime?.(node)}
-            title="Record Live Stage Execution Time"
-          >
-            <Clock className="mr-1 h-3.5 w-3.5" />
-            <span className="hidden lg:inline">Record Time</span>
-          </Button>
-
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-8 px-2.5 text-xs hover:bg-indigo-500/10 hover:text-indigo-400 font-semibold"
-            onClick={() => onAddChild?.(node)}
-            title="Add Sub-Activity to this session"
-          >
-            <Plus className="mr-1 h-3.5 w-3.5" />
-            <span>+ Sub-Activity</span>
-          </Button>
-
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-8 px-2.5 text-xs hover:bg-cyan-500/10 hover:text-cyan-400 font-semibold"
-            onClick={() => onAddDependency?.(node)}
-            title="Set Activity Dependency (Depends On)"
-          >
-            <LinkIcon className="mr-1 h-3.5 w-3.5" />
-            <span>Depends On</span>
-          </Button>
-
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 hover:bg-blue-500/10 hover:text-blue-400"
-            onClick={() => onEdit?.(node)}
-            title="Edit / Rename Session or Activity"
-          >
-            <Pencil className="h-3.5 w-3.5" />
-          </Button>
-
-          <Button
-            variant="ghost"
-            size="icon"
-            draggable
-            onDragStart={(e) => {
-              e.dataTransfer.setData('text/plain', node.id);
-              e.dataTransfer.effectAllowed = 'move';
-            }}
-            className="h-8 w-8 hover:bg-amber-500/10 hover:text-amber-400 cursor-grab active:cursor-grabbing"
-            onClick={() => onMove?.(node)}
-            title="Hold & Drag to Move Activity or Click to Reorder"
-          >
-            <Move className="h-3.5 w-3.5" />
-          </Button>
-
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 hover:bg-red-500/10 hover:text-red-400"
-            onClick={() => onDelete?.(node)}
-            title="Delete Node"
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-          </Button>
-        </div>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
-
-      {/* Children Recursion */}
-      {hasChildren && isExpanded && (
-        <div className="space-y-2 pl-4 border-l border-indigo-500/30 ml-4 py-1">
-          {childrenList.map((child: any) => (
-            <TreeNodeRow
-              key={child.id}
-              node={child}
-              depth={depth + 1}
-              onAddChild={onAddChild}
-              onRecordTime={onRecordTime}
-              onAddDependency={onAddDependency}
-              onEdit={onEdit}
-              onMove={onMove}
-              onDropMove={onDropMove}
-              onDelete={onDelete}
-            />
-          ))}
-        </div>
-      )}
     </div>
   );
 }
