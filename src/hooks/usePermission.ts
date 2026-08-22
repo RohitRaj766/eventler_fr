@@ -55,7 +55,8 @@ export function usePermissions() {
 
   /** How far a granted action reaches, or 'none' if it isn't granted. */
   const reachOf = useCallback(
-    (action: PermissionAction): Reach => reachByAction.get(action) ?? (isSuperAdmin ? 'organization' : 'none'),
+    (action: PermissionAction): Reach =>
+      reachByAction.get(action) ?? (isSuperAdmin ? "organization" : "none"),
     [reachByAction, isSuperAdmin],
   );
 
@@ -63,6 +64,7 @@ export function usePermissions() {
    * Passes when the user holds any one of the listed actions. With a subject,
    * the grant must also cover that specific record.
    */
+  //  bhari mistake ho gaya sir ji
   const can = useCallback(
     (action?: PermissionAction | PermissionAction[], subject?: Subject) => {
       if (!action) return true;
@@ -72,7 +74,9 @@ export function usePermissions() {
       return actions.some((item) => {
         // An action outside the catalogue falls back to plain set membership,
         // so an action the backend adds later still works before we model it.
-        const reach = reachByAction.get(item) ?? (permissionSet.has(item) ? 'organization' : 'none');
+        const reach =
+          reachByAction.get(item) ??
+          (permissionSet.has(item) ? "organization" : "none");
         return coversSubject(reach, userId, subject);
       });
     },
@@ -84,7 +88,9 @@ export function usePermissions() {
     (actions: PermissionAction[], subject?: Subject) => {
       if (isSuperAdmin) return true;
       return actions.every((action) => {
-        const reach = reachByAction.get(action) ?? (permissionSet.has(action) ? 'organization' : 'none');
+        const reach =
+          reachByAction.get(action) ??
+          (permissionSet.has(action) ? "organization" : "none");
         return coversSubject(reach, userId, subject);
       });
     },
@@ -108,7 +114,10 @@ export function usePermissions() {
   );
 
   /** The actions this user is entitled to put on a role they create. */
-  const grantableActions = useMemo(() => delegatableActions(permissions), [permissions]);
+  const grantableActions = useMemo(
+    () => delegatableActions(permissions),
+    [permissions],
+  );
 
   const activeRoleName = useMemo(
     () => organizations.find((org) => org.id === activeOrgId)?.role ?? null,
